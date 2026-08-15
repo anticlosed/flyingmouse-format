@@ -46,15 +46,16 @@ jobs:
         run: node scripts/lock-docstructure-engine.js --verify --root bin/docstructure --lock docstructure-engine-lock.json
 
       - name: Probe document structure engine
-        shell: powershell
+        shell: bash
         run: |
           # 引擎 MODEL_MISSING 启动探针退出码 20，JSON 写到 stderr。
-          # GH Actions powershell 默认 $ErrorActionPreference=Stop 会把 stderr 变 NativeCommandError，
-          # 直接 & 调用会失败；用 cmd /c 捕获 stderr 并透传真实退出码（本地实测 exit=20）。
-          $status = cmd /c "bin\docstructure\docstructure-engine.exe 2>&1"
-          if ($LASTEXITCODE -ne 20 -or $status -notmatch '"code":"MODEL_MISSING"') {
-            throw 'Document structure engine startup probe failed.'
-          }
+          # 用 bash 捕获输出（$? 是引擎真实退出码），规避 PowerShell $ErrorActionPreference=Stop
+          # 对 stderr 的 NativeCommandError 处理（powershell/cmd 方式均在 runner 上失败过）。
+          output=$(./bin/docstructure/docstructure-engine.exe 2>&1)
+          code=$?
+          echo "engine probe exit=$code"
+          echo "$output" | grep -q '"code":"MODEL_MISSING"' || { echo "missing MODEL_MISSING marker: $output"; exit 1; }
+          test "$code" -eq 20 || { echo "unexpected exit code: $code"; exit 1; }
 
       - name: Stage locked Thai OCR data for Windows tests
         shell: powershell
