@@ -49,10 +49,12 @@ jobs:
         shell: bash
         run: |
           # 引擎 MODEL_MISSING 启动探针退出码 20，JSON 写到 stderr。
-          # 用 bash 捕获输出（$? 是引擎真实退出码），规避 PowerShell $ErrorActionPreference=Stop
-          # 对 stderr 的 NativeCommandError 处理（powershell/cmd 方式均在 runner 上失败过）。
+          # runner 的 bash 默认 -e（set -e）——引擎退出码非 0 会直接终止脚本，
+          # 需先 set +e 捕获退出码再判断（powershell/cmd 方式另有 stderr 问题，均弃用）。
+          set +e
           output=$(./bin/docstructure/docstructure-engine.exe 2>&1)
           code=$?
+          set -e
           echo "engine probe exit=$code"
           echo "$output" | grep -q '"code":"MODEL_MISSING"' || { echo "missing MODEL_MISSING marker: $output"; exit 1; }
           test "$code" -eq 20 || { echo "unexpected exit code: $code"; exit 1; }
