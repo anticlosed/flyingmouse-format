@@ -345,7 +345,9 @@ test("accepts and freezes a valid table at the 20,000-cell boundary", () => {
 test("safe asset resolution accepts contained regular files without changing manifest paths", () => {
   const { resolveStructureAsset, validateStructureManifest } = require("../pdf-structure-contract");
   const resolved = resolveStructureAsset(assetRoot, "seal.png");
-  assert.equal(resolved, fs.realpathSync(path.join(assetRoot, "seal.png")));
+  // 实现用 realpathSync.native（返回长路径）；realpathSync（JS 版）在 Windows 8.3 短名
+  // 场景会返回 RUNNER~1 形式（runneradmin）——断言必须与实现一致用 .native
+  assert.equal(resolved, fs.realpathSync.native(path.join(assetRoot, "seal.png")));
   assert.equal(validateStructureManifest(fixture(), assetRoot).pages[0].referenceImage, "page-001.png");
 });
 
