@@ -31,6 +31,9 @@ async function createHarness(t) {
   const inputPath = path.join(root, "input.pdf");
   const runtimeDir = path.join(root, "runtime");
   await fsp.writeFile(enginePath, "engine");
+  // macOS/Linux 上可执行性检查（access X_OK）要求文件有 exec bit——fake 引擎需要 chmod，
+  // 否则 mac CI 会误报 ENGINE_MISSING 而非预期的 MODEL_MISSING（Windows 无此语义，无害）。
+  await fsp.chmod(enginePath, 0o755);
   await fsp.mkdir(modelDirectory);
   await fsp.mkdir(runtimeDir);
   await fsp.writeFile(inputPath, "pdf");
