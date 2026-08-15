@@ -3,6 +3,7 @@ const { execFileSync } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
 const fsp = require("fs/promises");
+const { pathToFileURL } = require("url");
 const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
@@ -351,8 +352,8 @@ test("merges images with blank pages inserted at requested positions", async () 
   assert.match(body.fileName, /等4个文件\.pdf$/);
   const outputPath = await downloadResult(body, "blank-merged.pdf");
   assertPdf(outputPath);
-  // 验证 PDF 页数 = 4（用 pdfjs 读页数）
-  const { getDocument } = await import("file:///C:/Users/34615/Documents/飞鼠格式/node_modules/pdfjs-dist/legacy/build/pdf.mjs");
+  // 验证 PDF 页数 = 4（用 pdfjs 读页数）——require.resolve 按 npm 解析，避免硬编码本机路径
+  const { getDocument } = await import(pathToFileURL(require.resolve("pdfjs-dist/legacy/build/pdf.mjs")).href);
   const data = new Uint8Array(await fsp.readFile(outputPath));
   const doc = await getDocument({ data, isEvalSupported: false }).promise;
   assert.strictEqual(doc.numPages, 4);

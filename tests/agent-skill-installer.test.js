@@ -95,6 +95,6 @@ test("installs nested skill files from a read-only virtual source (asar 场景�
   assert.equal(result.installed.length, 1);
   const installed = path.join(root, "flyingmouse-format");
   const entries = (await fs.readdir(installed, { recursive: true })).sort();
-  assert.deepEqual(entries, ["SKILL.md", "agents", "agents\\openai.yaml", "launcher.json", "scripts", "scripts\\flyingmouse-format.js"].sort());
+  assert.deepEqual(entries, ["SKILL.md", "agents", path.join("agents", "openai.yaml"), "launcher.json", "scripts", path.join("scripts", "flyingmouse-format.js")].sort());
   assert.equal(await fs.readFile(path.join(installed, "agents", "openai.yaml"), "utf8"), "interface: {}\n");
 });
