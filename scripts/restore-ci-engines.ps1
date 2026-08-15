@@ -102,7 +102,10 @@ try {
   foreach ($directory in $directories) {
     $destination = Join-Path $binRoot $directory
     if (Test-Path -LiteralPath $destination) {
-      throw "Engine destination already exists: $destination"
+      # bin/avs3 因 .gitignore 例外被 git 跟踪，CI checkout 自带；其内容与引擎 bundle 一致
+      # （bundle 由本机 bin/ 打包），直接复用，避免 Move-Item 冲突。
+      Write-Host "Skipping existing engine directory: $directory (already present)"
+      continue
     }
     Move-Item -LiteralPath (Join-Path $stage $directory) -Destination $destination
   }

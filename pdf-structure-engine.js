@@ -34,7 +34,11 @@ async function isTrustedEntry(fileSystem, candidate, expectedKind) {
     if (stats.isSymbolicLink()) return false;
     if (expectedKind === "file" ? !stats.isFile() : !stats.isDirectory()) return false;
     const real = await fileSystem.realpath(candidate);
-    return comparablePath(real) === comparablePath(candidate);
+    // macOS 的 /var、/tmp 是 /private/* 系统符号链接（/var/folders → /private/var/folders），
+    // realpath 后前缀会变——不能与 candidate 逐字符比较；改为校验 realpath 结果自洽
+    // （二次 realpath 稳定），防止符号链接链重定向攻击。
+    const stable = await fileSystem.realpath(real);
+    return comparablePath(stable) === comparablePath(real);
   } catch {
     return false;
   }
