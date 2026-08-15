@@ -205,7 +205,11 @@ async function trustedRoot(assetRoot, fileSystem) {
     const info = await fileSystem.lstat(assetRoot);
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("untrusted root");
     const realRoot = await fileSystem.realpath(assetRoot);
-    if (path.resolve(assetRoot).toLowerCase() !== path.resolve(realRoot).toLowerCase()) throw new Error("redirected root");
+    // macOS 的 /var、/tmp 是 /private/* 的系统符号链接（/var/folders → /private/var/folders），
+    // realpath 后前缀会变——不能要求 resolve(assetRoot) 与 realRoot 逐字符一致。
+    // 改为校验 realpath 结果自洽（二次 realpath 稳定），并以 realRoot 作为后续 contained 基准。
+    const stable = await fileSystem.realpath(realRoot);
+    if (path.resolve(stable).toLowerCase() !== path.resolve(realRoot).toLowerCase()) throw new Error("unstable root");
     return path.resolve(realRoot);
   } catch {
     throw stableError("PDF_OFFICE_OUTPUT_INVALID");
