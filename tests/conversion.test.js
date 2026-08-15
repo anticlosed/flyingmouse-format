@@ -377,7 +377,11 @@ test("converts a PDF to DOCX with extracted text and tables", async () => {
   // 无影响，原始库/当前库对照验证一致），退化成 <w:tab/> 分隔段落，且 ≥3 列时最后一列被丢弃
   // （本用例 Price/3.50 列丢失）——pdf2docx 固有行为，非本次 parse_stream_table=False 引入。
   // 有边框 lattice 表格不受影响（见下方 cropped PDF table 用例）。
-  assert.match(documentXml, /<w:tab\/>/);
+  // Windows 走 docengine（pdf2docx）→ <w:tab/>；mac/Linux 无 docengine，走 PDF.js 文字提取
+  // （tab 不会变成 <w:tab/>）——仅 Windows 断言 tab。
+  if (process.platform === "win32") {
+    assert.match(documentXml, /<w:tab\/>/);
+  }
   assert.match(documentXml, /Item/);
   assert.match(documentXml, /Qty/);
   assert.strictEqual(hashFile(sourcePath), beforeHash);
