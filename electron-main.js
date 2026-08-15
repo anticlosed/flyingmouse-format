@@ -75,73 +75,9 @@ function createWindow(url) {
   });
 }
 
-// ---- 自动更新（仅 NSIS/GitHub 渠道；微软商店版由商店自行更新）----
-let updater = null;
-
-function pushUpdateStatus(status) {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("update-status", status);
-  }
-}
-
-function setupAutoUpdater() {
-  if (!app.isPackaged || process.windowsStore) return;
-  // mac（github-dmg）：Release 没有 latest-mac.yml 资产，检查更新必 404；不启用
-  if (process.platform === "darwin") return;
-  // win7 Legacy 构建（Electron 22）：latest.yml 指向标准版（Electron 43）安装包，
-  // Win7 装不上（PE 头要求 Win10+），自动更新会坑掉 win7 用户；不启用
-  if (Number(process.versions.electron.split(".")[0]) < 30) return;
-  try {
-    ({ autoUpdater: updater } = require("electron-updater"));
-  } catch (error) {
-    log("Auto-updater module unavailable", error);
-    return;
-  }
-  updater.logger = logger;
-  updater.autoDownload = true;
-  updater.autoInstallOnAppQuit = true;
-  updater.on("error", (error) => {
-    log("Auto-update error", error);
-    pushUpdateStatus({ status: "error", message: String(error?.message || "") });
-  });
-  updater.on("update-available", (info) => {
-    log(`Auto-update available: ${info?.version}`);
-    pushUpdateStatus({ status: "available", version: info?.version || "" });
-  });
-  updater.on("update-not-available", () => {
-    log("Auto-update not available");
-    pushUpdateStatus({ status: "upToDate" });
-  });
-  updater.on("update-downloaded", (info) => {
-    log(`Update downloaded: ${info?.version}; will install on quit`);
-    pushUpdateStatus({ status: "downloaded", version: info?.version || "" });
-  });
-  // 启动后静默检查一次（不打扰用户；有更新会走上面的状态推送）
-  updater.checkForUpdatesAndNotify().catch((error) => {
-    log("Auto-update check failed", error);
-  });
-}
-
 ipcMain.handle("get-app-version", (event) => {
   assertTrustedIpc(event);
   return app.getVersion();
-});
-
-ipcMain.handle("check-for-updates", async (event) => {
-  assertTrustedIpc(event);
-  if (!updater) {
-    return { status: "unavailable" };
-  }
-  try {
-    const result = await updater.checkForUpdates();
-    if (result?.isUpdateAvailable) {
-      return { status: "available", version: result.updateInfo?.version || "" };
-    }
-    return { status: "upToDate" };
-  } catch (error) {
-    log("Manual update check failed", error);
-    return { status: "error", message: String(error?.message || "") };
-  }
 });
 
 function configureRuntime() {
@@ -151,6 +87,10 @@ function configureRuntime() {
   process.env.FLYINGMOUSE_LIBREOFFICE_PATH = runtimePaths.libreoffice;
   process.env.FLYINGMOUSE_PDFTOPPM_PATH = runtimePaths.pdftoppm;
   process.env.FLYINGMOUSE_TESSDATA_PATH = runtimePaths.tessdata;
+  if (runtimePaths.docstructureEngine) process.env.FLYINGMOUSE_DOCSTRUCTURE_ENGINE_PATH = runtimePaths.docstructureEngine;
+  else delete process.env.FLYINGMOUSE_DOCSTRUCTURE_ENGINE_PATH;
+  if (runtimePaths.docstructureModels) process.env.FLYINGMOUSE_DOCSTRUCTURE_MODEL_DIR = runtimePaths.docstructureModels;
+  else delete process.env.FLYINGMOUSE_DOCSTRUCTURE_MODEL_DIR;
   if (runtimePaths.avs3Decoder) process.env.FLYINGMOUSE_AVS3_DECODER_PATH = runtimePaths.avs3Decoder;
   else delete process.env.FLYINGMOUSE_AVS3_DECODER_PATH;
   log(`Runtime dir: ${process.env.FLYINGMOUSE_RUNTIME_DIR}`);
@@ -170,7 +110,6 @@ async function boot() {
   serverUrl = started.url;
   console.log(`FlyingMouse Format started at ${started.url}`);
   log(`Server started at ${started.url}`);
-  setupAutoUpdater();
   createWindow(started.url);
 }
 

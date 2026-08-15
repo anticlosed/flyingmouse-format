@@ -28,10 +28,10 @@ test("normalizes equivalent source extensions", () => {
 test("remembers and restores a target independently for each source extension", () => {
   let preferences = {};
   preferences = rememberTarget(preferences, ["mp3"], "wav");
-  preferences = rememberTarget(preferences, ["ncm"], "mp3");
+  preferences = rememberTarget(preferences, ["flac"], "mp3");
 
   assert.equal(preferredTarget(preferences, ["mp3"], ["wav", "flac"]), "wav");
-  assert.equal(preferredTarget(preferences, ["ncm"], ["mp3", "wav"]), "mp3");
+  assert.equal(preferredTarget(preferences, ["flac"], ["mp3", "wav"]), "mp3");
 });
 
 test("manual changes overwrite the previous default and ignore unavailable targets", () => {

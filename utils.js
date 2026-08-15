@@ -66,7 +66,7 @@ async function commandExists(command, versionArgs = ["-version"]) {
 }
 
 function extFromName(name = "") {
-  return path.extname(name).replace(".", "").toLowerCase();
+  return path.extname(String(name || "")).replace(".", "").toLowerCase();
 }
 
 function decodeUploadFileName(name = "") {
@@ -207,9 +207,7 @@ function targetsForExt(rawExt, tools) {
 function platformCapabilities(platform = process.platform, arch = process.arch) {
   return {
     os: platform,
-    arch,
-    standardNcm: true,
-    av3a: platform === "win32"
+    arch
   };
 }
 

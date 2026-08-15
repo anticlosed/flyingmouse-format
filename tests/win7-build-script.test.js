@@ -84,7 +84,6 @@ test("prepare-only creates a clean, current Win7 staging tree without changing t
   for (const entry of [
     "public",
     "build",
-    "av3a-format.js",
     "settings-store.js",
     "office-engine.js",
     "electron-main.js",

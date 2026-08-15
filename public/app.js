@@ -58,6 +58,10 @@ const pdfPasswordField = document.querySelector("#pdfPasswordField");
 const pdfPassword = document.querySelector("#pdfPassword");
 const pdfActionField = document.querySelector("#pdfActionField");
 const pdfAction = document.querySelector("#pdfAction");
+const pdfSplitModeField = document.querySelector("#pdfSplitModeField");
+const pdfSplitMode = document.querySelector("#pdfSplitMode");
+const pdfGroupSizeField = document.querySelector("#pdfGroupSizeField");
+const pdfGroupSize = document.querySelector("#pdfGroupSize");
 const convertButton = document.querySelector("#convertButton");
 const clearButton = document.querySelector("#clearButton");
 const statusBox = document.querySelector("#statusBox");
@@ -106,10 +110,6 @@ const messages = {
     "preview.open": "预览", "preview.eyebrow": "转换结果", "preview.title": "文件预览",
     "preview.close": "关闭预览", "preview.loading": "正在载入预览…", "preview.unsupported": "此格式暂不支持内嵌预览，可以保存后使用系统应用打开。",
     "preview.tooLarge": "文本文件超过 2 MB，为避免界面卡顿，请保存后查看。", "preview.failed": "预览失败：{message}",
-    "update.check": "检查更新", "update.checking": "正在检查更新…",
-    "update.latest": "已是最新版本", "update.available": "发现新版本 v{version}，正在下载…",
-    "update.downloaded": "新版本 v{version} 已下载，重启后生效", "update.restart": "立即重启",
-    "update.error": "更新检查失败：{message}", "update.unavailable": "当前版本不支持自动更新",
     "workflow.aria": "转换流程", "workflow.select": "选择文件", "workflow.analyze": "识别格式",
     "workflow.convert": "开始转换", "workflow.save": "保存结果", "upload.aria": "上传文件",
     "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试", "upload.chooseFolder": "选择文件夹转 PDF",
@@ -122,7 +122,6 @@ const messages = {
     "target.placeholder": "先选择文件", "target.analyzing": "正在识别", "target.none": "无共同目标格式",
     "pdfExcel.hint": "适合电子版规则表格；扫描件、复杂表头和合并单元格可能不完整。",
     "formats.experimental": "实验性/尚未完整验证的输入：{formats}",
-    "formats.av3aMac": "macOS 支持标准 NCM；Audio Vivid AV3A 目前仅支持 Windows。",
     "zip.label": "ZIP 压缩级别（0=不压缩，9=最大）", "zip.0": "0 不压缩（最快）",
     "zip.1": "1 最快", "zip.6": "6 标准（默认）", "zip.9": "9 最大压缩（最慢）",
     "videoCodec.label": "视频编码", "videoCodec.h264": "H.264（兼容性最好，默认）",
@@ -132,45 +131,15 @@ const messages = {
     "alphaBackground.green": "绿色（绿幕）", "alphaBackground.magenta": "洋红（绿幕抠像常用）",
     "pdfPassword.label": "PDF 密码（加密/解密）", "pdfAction.label": "PDF 操作",
     "pdfAction.split": "拆分 PDF（默认）", "pdfAction.encrypt": "加密 PDF", "pdfAction.decrypt": "解密 PDF",
+    "pdfSplitMode.label": "拆分方式", "pdfSplitMode.page": "逐页拆分（每页一个 PDF）", "pdfSplitMode.group": "每 N 页一组",
+    "pdfGroupSize.label": "每几页一组",
     "settings.aria": "转换设置", "progress.label": "转换进度", "status.ready": "选择文件后会显示可用的转换格式。",
     "formats.aria": "支持格式", "formats.title": "当前支持",
-    "formats.description": "文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。",
-    "sponsor.aria": "支持鼠鼠", "sponsor.close": "收起", "sponsor.title": "请鼠鼠吃小鱼干 🐟",
-    "sponsor.description": "本软件永久免费。如果帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿。若有人收费售卖本软件，那一定是套壳圈钱的骗子，请勿上当。",
-    "sponsor.qrAlt": "微信收款码",
-    "feedback.label": "问题反馈", "feedback.hint": "如需帮助，请反馈至 3465177342@qq.com",
-    "feedback.guide": "问题反馈：转换遇到问题，请把出问题的文件、导出诊断报告和问题截图，一起发到 3465177342@qq.com，我会尽快处理。",
-    "tutorial.qq.title": "QQ 音乐登录教程",
+    "formats.description": "文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。音频仅支持普通格式转换（MP3/WAV/FLAC/AAC/OGG 等），不支持其他音乐平台的加密特殊格式。",
+    "feedback.label": "问题反馈", "feedback.hint": "如需帮助，请导出诊断报告并查看错误提示。",
+    "feedback.guide": "问题反馈：转换遇到问题，请导出诊断报告并查看错误提示，帮助信息详见软件说明。",
     "tutorial.close": "关闭",
-    "tutorial.qq.lead": "新版 QQ 音乐加密音频（musicex）的密钥存在服务器上，需要你登录 QQ 音乐的网页版凭据在线换取。请按下面步骤获取凭据，放好后重新转换即可。注意：无论你的歌是从 QQ 音乐下载的、还是从微信聊天里收到的，获取 cookie 的步骤完全一样——都是去网页版 y.qq.com 登录同一个 QQ 账号。",
-    "tutorial.qq.s1.title": "① 打开网页版 QQ 音乐并登录",
-    "tutorial.qq.s1.desc": "用电脑浏览器打开 y.qq.com，点右上角「登录」，用你下载歌曲的 QQ 账号登录。",
-    "tutorial.qq.s1.alt": "QQ 音乐网页版登录后的页面",
-    "tutorial.qq.s1.cap": "图 1：登录后的网页版 QQ 音乐",
-    "tutorial.qq.s2.title": "② 打开开发者工具",
-    "tutorial.qq.s2.desc": "在网页上按键盘 F12（笔记本可能需同时按 Fn），或右键 →「检查」。浏览器下方/右侧会出现开发者工具面板。",
-    "tutorial.qq.s2.alt": "按 F12 后开发者工具打开",
-    "tutorial.qq.s2.cap": "图 2：开发者工具面板",
-    "tutorial.qq.s3.title": "③ 切到「应用程序 / Application」标签",
-    "tutorial.qq.s3.desc": "在开发者工具顶部标签栏找到「Application」（中文浏览器显示为「应用程序」），点它。如果顶部没有，点 » 展开更多标签。",
-    "tutorial.qq.s3.alt": "开发者工具顶部的 Application 标签",
-    "tutorial.qq.s3.cap": "图 3：顶部标签栏的 Application",
-    "tutorial.qq.s4.title": "④ 找到 Cookie 列表",
-    "tutorial.qq.s4.desc": "在左侧菜单展开「Storage → Cookies」，点下面的 https://y.qq.com，右侧会出现这个网站的 Cookie 列表。",
-    "tutorial.qq.s4.alt": "Storage → Cookies → y.qq.com 的列表",
-    "tutorial.qq.s4.cap": "图 4：Cookie 列表",
-    "tutorial.qq.s5.title": "⑤ 复制 qm_keyst 和 uin",
-    "tutorial.qq.s5.desc": "在列表里找到 qm_keyst（新版登录可能显示为 psrf_qqmusic_key）这一行，双击它的「值 / Value」列，Ctrl+C 复制整串内容。再找到 uin 行，复制你的 QQ 号。两个值都要复制。",
-    "tutorial.qq.s5.alt": "qm_keyst 和 uin 两行 Cookie",
-    "tutorial.qq.s5.cap": "图 5：qm_keyst 与 uin",
-    "tutorial.qq.s6.title": "⑥ 在桌面新建 cookie 文件",
-    "tutorial.qq.s6.desc": "在桌面空白处点鼠标右键 →「新建」→「文本文档」，把文件名改成 QQ音乐_登录cookie.txt（保留 .txt 后缀）。双击打开，点下面的「复制模板」，到记事本里粘贴，把「你的QQ号」和「你复制的qm_keyst值」替换成你自己的，然后 Ctrl+S 保存。位置说明：文件直接放在你的桌面就行，软件会自动识别你当前的桌面位置（无论桌面在 C 盘、D 盘，还是被 OneDrive 同步）。如果转换仍提示需要凭据，请把文件再复制一份到「C:\\Users\\你的用户名\\Desktop」这个文件夹里。",
-    "tutorial.qq.s6.alt": "记事本里 cookie 文件的格式",
-    "tutorial.qq.s6.cap": "图 6：cookie 文件内容格式",
     "tutorial.copyTemplate": "复制模板",
-    "tutorial.copied": "模板已复制，粘贴到记事本后替换成你的信息",
-    "tutorial.qq.s7.title": "⑦ 回到鼠鼠重新转换",
-    "tutorial.qq.s7.desc": "文件放好后，回到本软件重新拖入那个加密音频转换即可。cookie 偶尔会过期，提示需要凭据时重复上面的步骤更新一次就好。",
     "tutorial.gotIt": "我知道了"
   },
   "en-US": {
@@ -185,10 +154,6 @@ const messages = {
     "preview.open": "Preview", "preview.eyebrow": "Conversion result", "preview.title": "File preview",
     "preview.close": "Close preview", "preview.loading": "Loading preview…", "preview.unsupported": "This format cannot be previewed here. Save it and open it with a system application.",
     "preview.tooLarge": "This text file is larger than 2 MB. Save it to view without slowing the app.", "preview.failed": "Preview failed: {message}",
-    "update.check": "Check for Updates", "update.checking": "Checking for updates…",
-    "update.latest": "You are up to date", "update.available": "New version v{version} found, downloading…",
-    "update.downloaded": "v{version} downloaded; restart to apply", "update.restart": "Restart now",
-    "update.error": "Update check failed: {message}", "update.unavailable": "Auto-update is unavailable in this build",
     "workflow.aria": "Conversion workflow", "workflow.select": "Select files", "workflow.analyze": "Detect format",
     "workflow.convert": "Convert", "workflow.save": "Save results", "upload.aria": "Upload files",
     "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video", "upload.chooseFolder": "Choose folder → PDF",
@@ -201,7 +166,6 @@ const messages = {
     "target.placeholder": "Select files first", "target.analyzing": "Detecting", "target.none": "No common target format",
     "pdfExcel.hint": "Best for digital PDFs with regular tables. Scans, complex headers, and merged cells may be incomplete.",
     "formats.experimental": "Experimental/unverified inputs: {formats}",
-    "formats.av3aMac": "Standard NCM works on macOS; Audio Vivid AV3A currently requires Windows.",
     "zip.label": "ZIP compression level (0=none, 9=maximum)", "zip.0": "0 None (fastest)",
     "zip.1": "1 Fastest", "zip.6": "6 Standard (default)", "zip.9": "9 Maximum (slowest)",
     "videoCodec.label": "Video codec", "videoCodec.h264": "H.264 (best compatibility, default)",
@@ -211,45 +175,15 @@ const messages = {
     "alphaBackground.green": "Green (green screen)", "alphaBackground.magenta": "Magenta (common for chroma key)",
     "pdfPassword.label": "PDF password (encrypt/decrypt)", "pdfAction.label": "PDF action",
     "pdfAction.split": "Split PDF (default)", "pdfAction.encrypt": "Encrypt PDF", "pdfAction.decrypt": "Decrypt PDF",
+    "pdfSplitMode.label": "Split mode", "pdfSplitMode.page": "Split into single pages", "pdfSplitMode.group": "Group every N pages",
+    "pdfGroupSize.label": "Pages per group",
     "settings.aria": "Conversion settings", "progress.label": "Conversion progress", "status.ready": "Available target formats appear after you select files.",
     "formats.aria": "Supported formats", "formats.title": "Supported now",
-    "formats.description": "Document conversion preserves layout where possible. PDF pages can be exported as images, and images or scanned PDFs can be OCR'd to TXT.",
-    "sponsor.aria": "Support Mouse", "sponsor.close": "Close", "sponsor.title": "Buy Mouse a dried fish 🐟",
-    "sponsor.description": "This app is permanently free. If it helped you, you can buy Mouse a snack — completely optional. If anyone charges you for this app, it's a scam.",
-    "sponsor.qrAlt": "WeChat payment QR code",
-    "feedback.label": "Feedback", "feedback.hint": "For help, please contact 3465177342@qq.com",
-    "feedback.guide": "Feedback: if a conversion fails, send the problem file, the exported diagnostics, and a screenshot to 3465177342@qq.com and I'll look into it.",
-    "tutorial.qq.title": "QQ Music Login Guide",
+    "formats.description": "Document conversion preserves layout where possible; PDFs can export page images, and images and scanned PDFs can be OCRed to TXT. Audio supports only ordinary formats (MP3/WAV/FLAC/AAC/OGG etc.); encrypted formats from music platforms are not supported.",
+    "feedback.label": "Feedback", "feedback.hint": "For help, export the diagnostics report and check the error details.",
+    "feedback.guide": "Feedback: if a conversion fails, export the diagnostics report and check the error details. Help is described in the app documentation.",
     "tutorial.close": "Close",
-    "tutorial.qq.lead": "New QQ Music encrypted audio (musicex) keeps its key on the server; it must be fetched online using your QQ Music web login credentials. Follow the steps below, place the credential file, then convert again. Note: whether your song came from QQ Music or was received in WeChat, the steps are identical — just sign in to y.qq.com with the same QQ account.",
-    "tutorial.qq.s1.title": "① Open QQ Music web and sign in",
-    "tutorial.qq.s1.desc": "Open y.qq.com in your computer browser, click \"Sign in\" at the top right, and log in with the QQ account you used to download the song.",
-    "tutorial.qq.s1.alt": "QQ Music web page after signing in",
-    "tutorial.qq.s1.cap": "Fig. 1: QQ Music web after sign-in",
-    "tutorial.qq.s2.title": "② Open Developer Tools",
-    "tutorial.qq.s2.desc": "Press F12 on the page (Fn+F12 on some laptops), or right-click → \"Inspect\". The developer tools panel opens at the bottom or right side.",
-    "tutorial.qq.s2.alt": "Developer Tools opened after pressing F12",
-    "tutorial.qq.s2.cap": "Fig. 2: Developer Tools panel",
-    "tutorial.qq.s3.title": "③ Switch to the \"Application\" tab",
-    "tutorial.qq.s3.desc": "In the developer tools top tab bar, click \"Application\" (shown as 应用程序 in Chinese browsers). If it is hidden, click » to reveal more tabs.",
-    "tutorial.qq.s3.alt": "Application tab in the developer tools tab bar",
-    "tutorial.qq.s3.cap": "Fig. 3: Application tab",
-    "tutorial.qq.s4.title": "④ Open the Cookie list",
-    "tutorial.qq.s4.desc": "In the left menu expand \"Storage → Cookies\" and click https://y.qq.com below it. The cookie list for this site appears on the right.",
-    "tutorial.qq.s4.alt": "Storage → Cookies → y.qq.com list",
-    "tutorial.qq.s4.cap": "Fig. 4: Cookie list",
-    "tutorial.qq.s5.title": "⑤ Copy qm_keyst and uin",
-    "tutorial.qq.s5.desc": "Find the qm_keyst row (newer sign-ins may show it as psrf_qqmusic_key), double-click its Value column, press Ctrl+C to copy the whole string. Then find the uin row and copy your QQ number. Copy both values.",
-    "tutorial.qq.s5.alt": "qm_keyst and uin cookie rows",
-    "tutorial.qq.s5.cap": "Fig. 5: qm_keyst and uin",
-    "tutorial.qq.s6.title": "⑥ Create the cookie file on your desktop",
-    "tutorial.qq.s6.desc": "Right-click an empty area of your desktop → \"New\" → \"Text Document\", rename it to QQ音乐_登录cookie.txt (keep the .txt extension). Double-click to open it, click \"Copy template\" below, paste into Notepad, replace \"your QQ number\" and \"the qm_keyst value you copied\" with your own, then press Ctrl+S to save. Location: just place the file on your desktop — the app auto-detects your real desktop folder (whether it's on the C: drive, D: drive, or synced by OneDrive). If conversion still says credentials are needed, also copy the file to \"C:\\Users\\<your username>\\Desktop\".",
-    "tutorial.qq.s6.alt": "Cookie file format in Notepad",
-    "tutorial.qq.s6.cap": "Fig. 6: Cookie file content format",
     "tutorial.copyTemplate": "Copy template",
-    "tutorial.copied": "Template copied. Paste it into Notepad and replace the placeholders with your info.",
-    "tutorial.qq.s7.title": "⑦ Convert again in Mouse",
-    "tutorial.qq.s7.desc": "Once the file is in place, drag the encrypted audio into this app and convert again. The cookie expires occasionally; when credentials are requested again, repeat the steps above to refresh it.",
     "tutorial.gotIt": "Got it"
   }
 };
@@ -515,9 +449,6 @@ function renderFormatTable() {
         formats: group.experimentalInputs.join(", ")
       })));
     }
-    if (key === "audio" && state.capabilities?.platform?.av3a === false) {
-      article.append(createTextElement("p", "format-note", t("formats.av3aMac")));
-    }
     return article;
   });
   formatTable.replaceChildren(...entries);
@@ -686,8 +617,16 @@ function syncPdfActionFields() {
   const isPdfToPdf = targetSelect.value === "pdf"
     && state.fileInfos.length === state.files.length
     && state.fileInfos.every((info) => info.category === "pdf");
-  pdfPasswordField.hidden = !isPdfToPdf;
+  const action = pdfAction ? pdfAction.value : "";
   pdfActionField.hidden = !isPdfToPdf;
+  // 密码框：仅加密/解密时显示
+  pdfPasswordField.hidden = !(isPdfToPdf && (action === "encrypt" || action === "decrypt"));
+  // 拆分方式：仅拆分时显示
+  const isSplit = isPdfToPdf && !action;
+  if (pdfSplitModeField) pdfSplitModeField.hidden = !isSplit;
+  // 每 N 页：拆分 + group 时显示
+  const isGroup = isSplit && pdfSplitMode && pdfSplitMode.value === "group";
+  if (pdfGroupSizeField) pdfGroupSizeField.hidden = !isGroup;
 }
 
 function syncPdfExcelHint() {
@@ -846,6 +785,8 @@ async function convertOneFile(file, targetFormat) {
   if (targetFormat === "pdf" && state.fileInfos.every((info) => info.category === "pdf")) {
     form.append("pdfAction", pdfAction?.value || "");
     if (pdfPassword?.value) form.append("password", pdfPassword.value);
+    if (pdfSplitMode?.value) form.append("splitMode", pdfSplitMode.value);
+    if (pdfGroupSize?.value) form.append("groupSize", pdfGroupSize.value);
   }
 
   const response = await fetch("/api/convert", {
@@ -1410,6 +1351,8 @@ targetSelect.addEventListener("change", async () => {
 });
 downloadButton.addEventListener("click", saveConvertedFile);
 batchSaveButton.addEventListener("click", saveAllConvertedFiles);
+if (pdfAction) pdfAction.addEventListener("change", syncPdfActionFields);
+if (pdfSplitMode) pdfSplitMode.addEventListener("change", syncPdfActionFields);
 previewButton.addEventListener("click", () => openPreview(state.converted, previewButton));
 previewClose.addEventListener("click", closePreview);
 previewBackdrop.addEventListener("click", closePreview);
@@ -1513,67 +1456,19 @@ async function initializeApp() {
   setMouseState("upload");
   setWorkflowStep("select");
   await fetchCapabilities();
-  initializeUpdateWidget();
+  initializeVersionLabel();
 }
 
-// ---- 版本号与自动更新状态（NSIS 版；开发/商店版静默降级）----
+// ---- 版本号显示 ----
 const appVersionEl = document.querySelector("#appVersion");
-const updateButton = document.querySelector("#updateButton");
-const updateStatusEl = document.querySelector("#updateStatus");
 
-function renderUpdateStatus(status) {
-  const kind = status?.status;
-  const version = status?.version || "";
-  const message = status?.message || "unknown";
-  let text = "";
-  let tone = "";
-  if (kind === "checking") text = t("update.checking");
-  else if (kind === "upToDate") { text = t("update.latest"); tone = "ok"; }
-  else if (kind === "available") text = t("update.available", { version });
-  else if (kind === "downloaded") { text = t("update.downloaded", { version }); tone = "ok"; }
-  else if (kind === "error") { text = t("update.error", { message }); tone = "error"; }
-  else if (kind === "unavailable") text = t("update.unavailable");
-
-  // 检测到新版本才亮出「检查更新」入口（默认隐藏，不打扰用户）。
-  if (kind === "available" || kind === "downloaded") {
-    updateButton.hidden = false;
-  }
-
-  // 状态文本：有新版本或手动检查中时显示；无更新/出错静默。
-  const showStatus = kind === "available" || kind === "downloaded" || kind === "checking";
-  if (!text || !showStatus) {
-    updateStatusEl.hidden = true;
-    return;
-  }
-  updateStatusEl.textContent = text;
-  updateStatusEl.hidden = false;
-  updateStatusEl.classList.toggle("update-error", tone === "error");
-  updateStatusEl.classList.toggle("update-ok", tone === "ok");
-}
-
-function initializeUpdateWidget() {
-  if (!window.flyingMouseFormat) {
-    updateButton.hidden = true;
-    return;
-  }
+function initializeVersionLabel() {
+  if (!window.flyingMouseFormat) return;
   window.flyingMouseFormat.getAppVersion()
     .then((version) => {
       if (version) appVersionEl.textContent = `v${version}`;
     })
     .catch(() => {});
-  window.flyingMouseFormat.onUpdateStatus((status) => renderUpdateStatus(status));
-  updateButton.addEventListener("click", async () => {
-    updateButton.disabled = true;
-    renderUpdateStatus({ status: "checking" });
-    try {
-      const result = await window.flyingMouseFormat.checkForUpdates();
-      renderUpdateStatus(result);
-    } catch (error) {
-      renderUpdateStatus({ status: "error", message: String(error?.message || "") });
-    } finally {
-      updateButton.disabled = false;
-    }
-  });
 }
 
 initializeApp().catch((error) => {
@@ -1582,82 +1477,3 @@ initializeApp().catch((error) => {
   setStatus(error.message, "error");
   rendererLog("error", "能力检测失败", error);
 });
-
-const sponsorToggle = document.querySelector("#sponsorToggle");
-const sponsorPanel = document.querySelector("#sponsorPanel");
-const sponsorClose = document.querySelector("#sponsorClose");
-const sponsorWidget = document.querySelector("#sponsorWidget");
-
-function setSponsorOpen(open) {
-  sponsorPanel.hidden = !open;
-  sponsorToggle.setAttribute("aria-expanded", String(open));
-}
-
-sponsorToggle.addEventListener("click", () => setSponsorOpen(sponsorPanel.hidden));
-sponsorClose.addEventListener("click", () => setSponsorOpen(false));
-document.addEventListener("click", (event) => {
-  if (!sponsorPanel.hidden && !sponsorWidget.contains(event.target)) setSponsorOpen(false);
-});
-
-/* --- QQ 音乐登录教程弹窗 --- */
-const qqTutorialModal = document.querySelector("#qqTutorialModal");
-const qqTutorialBackdrop = document.querySelector("#qqTutorialBackdrop");
-const qqTutorialClose = document.querySelector("#qqTutorialClose");
-const qqTutorialGotIt = document.querySelector("#qqTutorialGotIt");
-
-function openQqTutorial() {
-  qqTutorialModal.hidden = false;
-}
-
-function closeQqTutorial() {
-  qqTutorialModal.hidden = true;
-}
-
-qqTutorialClose.addEventListener("click", closeQqTutorial);
-qqTutorialGotIt.addEventListener("click", closeQqTutorial);
-qqTutorialBackdrop.addEventListener("click", closeQqTutorial);
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !qqTutorialModal.hidden) closeQqTutorial();
-});
-
-// 图解缺失时隐藏破图占位，只保留文字步骤（图片在弹窗打开前就 404 时触发）。
-qqTutorialModal.querySelectorAll(".step-figure img").forEach((img) => {
-  img.addEventListener("error", () => {
-    img.hidden = true;
-  });
-});
-
-// musicex 解密需要 QQ 音乐登录凭据：失败时自动弹出教程。
-const QQ_COOKIE_ERROR_CODES = new Set(["MFLAC_EKEY_REQUIRED", "MFLAC_EKEY_NETWORK"]);
-
-function maybeShowQqTutorial(error) {
-  if (error && QQ_COOKIE_ERROR_CODES.has(String(error.errorCode || ""))) {
-    openQqTutorial();
-    return true;
-  }
-  return false;
-}
-
-// 复制 cookie 模板到剪贴板（供用户粘贴到桌面 QQ音乐_登录cookie.txt）
-const qqCookieTemplate = document.querySelector("#qqCookieTemplate");
-const qqCookieTemplateCopy = document.querySelector("#qqCookieTemplateCopy");
-
-async function copyQqCookieTemplate() {
-  const templateText = qqCookieTemplate.textContent;
-  try {
-    await navigator.clipboard.writeText(templateText);
-    setStatus(t("tutorial.copied"), "success");
-  } catch {
-    // clipboard API 不可用时选中模板文本，提示用户手动 Ctrl+C
-    const range = document.createRange();
-    range.selectNodeContents(qqCookieTemplate);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-    setStatus(i18n.language === "en-US"
-      ? "Template selected. Press Ctrl+C to copy it, then paste into Notepad."
-      : "模板已选中，请按 Ctrl+C 复制，再到记事本粘贴。", "success");
-  }
-}
-
-qqCookieTemplateCopy.addEventListener("click", copyQqCookieTemplate);

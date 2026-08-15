@@ -198,9 +198,7 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
   assert.deepEqual(capabilities.groups.document.experimentalInputs, ["wpd", "wps", "wpt"]);
   assert.deepEqual(capabilities.groups.spreadsheet.experimentalInputs, ["et", "ett"]);
   assert.deepEqual(capabilities.groups.presentation.experimentalInputs, ["dps", "dpt"]);
-  assert.deepEqual(capabilities.groups.audio.experimentalInputs, ["kgg", "mflac", "kwm"]);
-  assert.equal(capabilities.platform.standardNcm, true);
-  assert.equal(capabilities.platform.av3a, process.platform === "win32");
+  assert.deepEqual(capabilities.groups.audio.experimentalInputs, []);
   const serverSource = require("node:fs").readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   const imageSource = require("node:fs").readFileSync(path.join(__dirname, "..", "image.js"), "utf8");
   const pdfTableSource = require("node:fs").readFileSync(path.join(__dirname, "..", "pdf-table.js"), "utf8");
@@ -211,18 +209,19 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
   assert.match(pdfTableSource, /async function\* pages\(\)/);
 });
 
-test("platform capabilities keep standard NCM cross-platform and AV3A Windows-only", () => {
+test("platform capabilities report os and arch only (no music-platform capability flags)", () => {
   assert.deepEqual(platformCapabilities("darwin", "arm64"), {
-    os: "darwin", arch: "arm64", standardNcm: true, av3a: false
+    os: "darwin", arch: "arm64"
   });
   assert.deepEqual(platformCapabilities("win32", "x64"), {
-    os: "win32", arch: "x64", standardNcm: true, av3a: true
+    os: "win32", arch: "x64"
   });
 });
 
 test("packaging and Win7 staging include the new runtime modules", () => {
   const packageJson = require("../package.json");
   const source = require("node:fs").readFileSync(path.join(__dirname, "..", "win7-build-profile.js"), "utf8");
+  assert.ok(packageJson.build.files.includes("pdf-classifier.js"), "pdf-classifier.js is missing from build.files");
   for (const file of ["resource-policy.js", "text-conversion.js", "pdf-table-extractor.js", "pdf-table-runtime.js", "config.js", "utils.js", "media.js", "zip-util.js", "image.js", "ocr.js", "pdfjs.js", "pdf-table.js", "pdf.js", "text-docx.js", "office-convert.js"]) {
     assert.ok(packageJson.build.files.includes(file), `${file} is missing from build.files`);
     assert.match(source, new RegExp(`["]${file.replace(".", "\\.")}["]`));

@@ -4,7 +4,7 @@
 
 FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器。主产品必须使用原版鼠鼠 UI；它与“鼠鼠打印”是两个独立项目，禁止跨项目修改或混合发布物。
 
-当前主线：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、按源格式记忆目标格式、保存目录记忆、NCM/AV3A/KGMA/mflac/mgg/mmp4 加密音频解锁、PDF→Word 版式还原（docengine）、PDF→Excel 表格提取（camelot）、视频编码选择（H.264/H.265/AV1）。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27 兼容包，禁止降低根 manifest 的主线依赖。
+当前主线：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、按源格式记忆目标格式、保存目录记忆、PDF→Word 版式还原（docengine）、PDF→Excel 表格提取（camelot）、视频编码选择（H.264/H.265/AV1）。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27 兼容包，禁止降低根 manifest 的主线依赖。
 
 ## Source map
 
@@ -19,7 +19,6 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - `resource-policy.js`：统一图片、批量、PDF 与 OCR 资源上限和稳定错误码。
 - `text-conversion.js`：统一 ATX/Fenced Turndown 与严格 CSV 解析。
 - `pdf-table-extractor.js` / `pdf-table-runtime.js`：复杂 PDF 表格几何识别、OCR 回退与工作簿模型。
-- `ncm-format.js`、`av3a-format.js`、`kgg-format.js`、`mflac-format.js`：专有音频容器处理（mflac/mgg 解密含 musicex 在线降档）。
 - `logger.js`：主进程、服务端和渲染器共用的分级日志。
 - `win7-build-profile.js` / `scripts/build-win7.js`：派生并构建隔离的 Windows 7 manifest；根依赖不得被改写。
 - `pe-metadata.js` / `scripts/inspect-pe.js`：读取 PE32/PE32+ 的目标 OS 版本，发布时检查解包应用 EXE。
@@ -47,9 +46,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - PDF → PNG/JPG 使用 Poppler，并因多页输出 ZIP。
 - 图片或扫描 PDF → TXT 使用 Tesseract OCR。
 - 音频源不得暴露 MP4/WebM/MKV/MOV 等视频容器目标。
-- NCM 只保证兼容 `music.163.com` 对应网易云音乐客户端生成的文件；其他网站的同扩展名变体不在范围内。
-- AV3A NCM 通过 `av3a-format.js` 提取音轨、随包 AVS3 helper 解码为 WAV，再由 FFmpeg 转换。
-- 商店版（Microsoft Store / APPX）构建时隐藏加密音频解锁入口：`process.windowsStore` 时 capabilities 过滤 `unlockAudioInputs`（ncm/kgg/mflac/mgg/kgma/mmp4）+ 解密分发拒绝（AUDIO_UNLOCK_UNAVAILABLE_ON_STORE）；商店材料也不要宣传 DRM 绕过。README 可以中性说明官方客户端 NCM/Audio Vivid 兼容范围。
+- 音频仅支持普通格式（MP3/WAV/FLAC/AAC/OGG/OPUS/WMA），不支持任何音乐平台加密特殊格式（DRM 规避法律风险，公开版已移除解锁模块，见 docs/分发与合规规范.md）。
 
 ## Security boundaries
 
@@ -70,7 +67,7 @@ Electron 启动时设置：
 - `FLYINGMOUSE_LIBREOFFICE_PATH`
 - `FLYINGMOUSE_LOG_FILE`
 
-开发或测试还可覆盖 `FLYINGMOUSE_PDFTOPPM_PATH`、`FLYINGMOUSE_TESSDATA_PATH` 和 `PORT`。真实 AV3A 测试使用 `FLYINGMOUSE_AV3A_NCM_FIXTURES`。
+开发或测试还可覆盖 `FLYINGMOUSE_PDFTOPPM_PATH`、`FLYINGMOUSE_TESSDATA_PATH` 和 `PORT`。
 
 桌面日志位于 `%APPDATA%\FlyingMouse Format\debug.log`。独立运行 `node server.js` 时默认写 `%TEMP%\flyingmouse-format-debug.log`。
 
@@ -104,7 +101,7 @@ npm audit --omit=dev --prefix output\win7-stage
 - 发布前必须检查：完整测试、真实 AV3A 样本、`npm audit --omit=dev`、ASAR 文件、引擎资源、EXE 产品版本、安装包 SHA-256、鼠鼠内嵌图标、桌面快捷方式、GitHub 资产摘要。
 - `dist/win-unpacked` 是本机开发/验收入口；公开交付使用 Release 安装包。
 - Win7 构建只允许使用 Node.js 18–22（推荐 22 LTS）和专用 `win7-package-lock.json` 经 `npm ci` 重建 `output/win7-stage/`；子进程必须绑定当前 Node，源码复制须兼容 Unicode 路径。产物写入精确的 `dist/FlyingMouse Format-Setup-<version>-win7-x64.exe`；脚本必须锁定 staging manifest/lockfile，校验本地 builder 与 `extraResources` 各自在允许根目录内的 canonical containment 并拒绝 reparse point；测试可以清理 staging，不得覆盖标准安装包或移动既有版本标签。
-- Windows 7 发布证据必须同时记录：主线测试、staging 测试、真实 NCM/AV3A、内层 EXE PE 5.2、当前系统冒烟、旧依赖审计及“真实 Win7 设备待验收”。
+- Windows 7 发布证据必须同时记录：主线测试、staging 测试、内层 EXE PE 5.2、当前系统冒烟、旧依赖审计及“真实 Win7 设备待验收”。
 - Win7 staging 测试只运行能在 staging 内自洽执行的 90 项；根专属真实引擎/打包管线测试由主线执行，不得把根测试文件复制进 staging 后制造假失败。
 - GitHub remote：`https://github.com/LaoFeng-mouse/flyingmouse-format.git`。
 
@@ -119,7 +116,7 @@ npm audit --omit=dev --prefix output\win7-stage
 
 ## 著作权与许可（2026-08-14 起强制执行）
 
-- 作者：牢蜂（LaoFeng），抖音号 3869421365。所有公开发布物（README、Release、安装包、UI、诊断文件、商店材料）必须保留作者署名。
+- 作者：牢蜂（LaoFeng）。所有公开发布物（README、Release、安装包、UI、诊断文件、商店材料）必须保留作者署名。
 - 许可证为非商用：禁止销售、转卖、收费服务、电商平台倒卖、套壳换皮重新发布。LICENSE 已从 MIT 更换为非商用许可。
-- 任何界面文案/文档新增作者信息时：作者=牢蜂，抖音=3869421365，禁止商用表述为「仅供个人免费使用，禁止商业售卖/转卖/套壳」。
+- 任何界面文案/文档新增作者信息时：作者=牢蜂，禁止商用表述为「仅供个人免费使用，禁止商业售卖/转卖/套壳」。
 - 包内版本号、README 版本号、release notes、package-lock/win7-package-lock 版本号必须与 package.json 同步，发版前逐一核对。

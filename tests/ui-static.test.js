@@ -20,12 +20,13 @@ test("renderer exposes workflow hooks and drop zone copy", () => {
   assert.match(html, /id="dropHint"/);
 });
 
-test("renderer restores the original mouse mascot and sponsor widget", () => {
+test("renderer restores the original mouse mascot and removes sponsor widget", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
   assert.match(html, /mouse-mascot|mouseMascot/);
-  assert.match(html, /sponsorWidget/);
+  assert.doesNotMatch(html, /sponsorWidget|sponsorToggle/);
   assert.match(app, /setMouseState|mouseAssets|mouseMascot/);
+  assert.doesNotMatch(app, /sponsorToggle/);
 });
 
 test("renderer uses the mouse brand and favicon", () => {
@@ -41,7 +42,7 @@ test("original mouse visual theme classes are present", () => {
   assert.match(css, /\.workflow-steps/);
   assert.match(css, /\.mouse-stage/);
   assert.match(css, /\.mouse-mascot/);
-  assert.match(css, /\.sponsor-widget/);
+  assert.doesNotMatch(css, /\.sponsor-widget/);
   assert.match(css, /border-radius:\s*var\(--radius\)/);
 });
 
@@ -129,13 +130,7 @@ test("video targets expose a transparent background color selector", () => {
   assert.match(app, /form\.append\("alphaBackground"/);
 });
 
-test("update entry is hidden by default and revealed only on update-available", () => {
-  const html = readPublic("index.html");
-  const app = readPublic("app.js");
-  assert.match(html, /id="updateButton"[^>]*hidden/);
-  assert.match(app, /kind === "available" \|\| kind === "downloaded"/);
-  assert.match(app, /updateButton\.hidden = false/);
-});
+
 
 test("renderer no longer enforces a batch size limit and localizes resource errors", () => {
   const app = readPublic("app.js");
@@ -153,59 +148,50 @@ test("renderer shows localized conversion warnings without HTML injection", () =
   assert.doesNotMatch(app, /\.innerHTML\s*=/);
 });
 
-test("renderer labels experimental inputs and the macOS AV3A boundary bilingually", () => {
+test("renderer labels experimental inputs bilingually", () => {
   const app = readPublic("app.js");
   assert.match(app, /experimentalInputs/);
   assert.match(app, /Experimental\/unverified inputs/);
   assert.match(app, /实验性\/尚未完整验证的输入/);
-  assert.match(app, /Standard NCM works on macOS; Audio Vivid AV3A currently requires Windows/);
-  assert.match(app, /macOS 支持标准 NCM；Audio Vivid AV3A 目前仅支持 Windows/);
+  assert.doesNotMatch(app, /NCM|MFLAC|Audio Vivid/);
 });
 
-test("renderer surfaces a feedback email in the header and on failures", () => {
+test("renderer surfaces a feedback hint without personal contact details", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
   const css = readPublic("styles.css");
   assert.match(html, /class="feedback-line"/);
-  assert.match(html, /3465177342@qq\.com/);
+  assert.doesNotMatch(html, /3465177342@qq\.com/);
   assert.match(app, /"feedback\.label": "问题反馈"/);
   assert.match(app, /"feedback\.label": "Feedback"/);
-  assert.match(app, /"feedback\.hint": "如需帮助，请反馈至 3465177342@qq\.com"/);
-  assert.match(app, /"feedback\.hint": "For help, please contact 3465177342@qq\.com"/);
+  assert.match(app, /"feedback\.hint": "如需帮助，请导出诊断报告/);
+  assert.match(app, /"feedback\.hint": "For help, export the diagnostics report/);
   assert.match(app, /t\("feedback\.hint"\)/);
   assert.match(css, /\.feedback-line/);
 });
 
-test("QQ Music credential tutorial opens automatically on musicex cookie errors", () => {
-  const html = readPublic("index.html");
-  const app = readPublic("app.js");
-  const css = readPublic("styles.css");
-  assert.match(html, /id="qqTutorialModal"/);
-  assert.match(html, /QQ音乐_登录cookie\.txt/);
-  assert.match(app, /"tutorial\.qq\.title": "QQ 音乐登录教程"/);
-  assert.match(app, /"tutorial\.qq\.title": "QQ Music Login Guide"/);
-  assert.match(app, /QQ_COOKIE_ERROR_CODES/);
-  assert.match(app, /MFLAC_EKEY_REQUIRED/);
-  assert.match(app, /maybeShowQqTutorial\(error\)/);
-  assert.match(app, /openQqTutorial\(\)/);
-  assert.match(app, /closeQqTutorial\(\)/);
-  assert.match(css, /\.tutorial-dialog/);
-  assert.match(css, /\.tutorial-backdrop/);
-});
 
-test("QQ cookie tutorial offers a copyable credential template", () => {
+
+
+
+test("PDF split mode exposes page/group options and a group-size field bilingually", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
-  const css = readPublic("styles.css");
-  assert.match(html, /id="qqCookieTemplate"/);
-  assert.match(html, /uin=你的QQ号; qm_keyst=你复制的qm_keyst值/);
-  assert.match(html, /id="qqCookieTemplateCopy"/);
-  assert.match(app, /"tutorial\.copyTemplate": "复制模板"/);
-  assert.match(app, /"tutorial\.copyTemplate": "Copy template"/);
-  assert.match(app, /navigator\.clipboard\.writeText/);
-  assert.match(app, /qqCookieTemplateCopy\.addEventListener\("click", copyQqCookieTemplate\)/);
-  assert.match(css, /\.template-card/);
-  assert.match(css, /\.template-code/);
+  assert.match(html, /id="pdfSplitModeField"[^>]*hidden/);
+  assert.match(html, /id="pdfSplitMode"/);
+  assert.match(html, /id="pdfGroupSizeField"[^>]*hidden/);
+  assert.match(html, /id="pdfGroupSize"/);
+  assert.match(app, /"pdfSplitMode\.label": "拆分方式"/);
+  assert.match(app, /"pdfSplitMode\.label": "Split mode"/);
+  assert.match(app, /"pdfSplitMode\.page": "逐页拆分（每页一个 PDF）"/);
+  assert.match(app, /"pdfSplitMode\.page": "Split into single pages"/);
+  assert.match(app, /"pdfSplitMode\.group": "每 N 页一组"/);
+  assert.match(app, /"pdfSplitMode\.group": "Group every N pages"/);
+  assert.match(app, /"pdfGroupSize\.label": "每几页一组"/);
+  assert.match(app, /"pdfGroupSize\.label": "Pages per group"/);
+  assert.match(app, /form\.append\("splitMode"/);
+  assert.match(app, /form\.append\("groupSize"/);
+  assert.match(app, /pdfSplitMode\.addEventListener\("change", syncPdfActionFields\)/);
 });
 
 test("folder compression is exposed through the trusted bridge bilingually", () => {
@@ -249,13 +235,13 @@ test("blank page insertion is exposed in the image merge queue", () => {
   assert.doesNotMatch(app, /\.innerHTML\s*=/);
 });
 
-test("author attribution and non-commercial notice are present in UI and styles", () => {
+test("non-commercial notice is present in UI and styles without author attribution", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
   const css = readPublic("styles.css");
   assert.match(html, /class="author-line"/);
-  assert.match(html, /牢蜂/);
-  assert.match(html, /3869421365/);
+  assert.doesNotMatch(html, /牢蜂|LaoFeng/);
+  assert.match(html, /仅支持普通音乐格式转换，不支持其他音乐平台的加密特殊格式/);
   assert.match(html, /禁止商业售卖/);
   assert.match(css, /\.author-line/);
   // 渲染器不重新引入 innerHTML

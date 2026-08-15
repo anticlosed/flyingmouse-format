@@ -84,11 +84,11 @@ test("legacy migration fills missing mappings without overwriting newer choices"
   await updateSettings(settingsPath, { targetBySource: { pdf: "png" } });
 
   const merged = await mergeLegacySettings(settingsPath, {
-    targetBySource: { pdf: "xlsx", ncm: "mp3" },
+    targetBySource: { pdf: "xlsx", flac: "mp3" },
     language: "zh-CN"
   });
 
-  assert.deepEqual(merged.targetBySource, { pdf: "png", ncm: "mp3" });
+  assert.deepEqual(merged.targetBySource, { pdf: "png", flac: "mp3" });
   assert.equal(merged.language, "zh-CN");
 });
 

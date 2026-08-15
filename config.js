@@ -92,12 +92,50 @@ function bundledDocenginePath() {
   return candidates.find((candidate) => fs.existsSync(candidate)) || "";
 }
 
+function bundledQpdfPath() {
+  const resourcesPath = process.resourcesPath || "";
+  const candidates = [
+    process.env.FLYINGMOUSE_QPDF_PATH,
+    resourcesPath && path.join(resourcesPath, "qpdf", "bin", "qpdf.exe"),
+    path.join(ROOT, "bin", "qpdf", "extracted", "qpdf-12.4.0-msvc64", "bin", "qpdf.exe"),
+    path.join(process.cwd(), "bin", "qpdf", "extracted", "qpdf-12.4.0-msvc64", "bin", "qpdf.exe"),
+    "qpdf"
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => candidate === "qpdf" || fs.existsSync(candidate)) || "qpdf";
+}
+
+function bundledDocstructureEnginePath() {
+  const resourcesPath = process.resourcesPath || "";
+  const candidates = [
+    process.env.FLYINGMOUSE_DOCSTRUCTURE_ENGINE_PATH,
+    resourcesPath && path.join(resourcesPath, "docstructure", "docstructure-engine.exe"),
+    path.join(ROOT, "bin", "docstructure", "docstructure-engine.exe"),
+    path.join(process.cwd(), "bin", "docstructure", "docstructure-engine.exe")
+  ].filter(Boolean);
+  return candidates.find((candidate) => fs.existsSync(candidate)) || "";
+}
+
+function bundledDocstructureModelDir() {
+  const resourcesPath = process.resourcesPath || "";
+  const candidates = [
+    process.env.FLYINGMOUSE_DOCSTRUCTURE_MODEL_DIR,
+    resourcesPath && path.join(resourcesPath, "docstructure", "models"),
+    path.join(ROOT, "bin", "docstructure", "models"),
+    path.join(process.cwd(), "bin", "docstructure", "models")
+  ].filter(Boolean);
+  return candidates.find((candidate) => fs.existsSync(candidate)) || "";
+}
+
 const FFMPEG_PATH = bundledFfmpegPath();
 const LIBREOFFICE_PATH = bundledLibreOfficePath();
 const PDFTOPPM_PATH = bundledPdftoppmPath();
 const TESSDATA_PATH = bundledTessdataPath();
 const DCRAW_PATH = bundledDcrawPath();
 const DOCENGINE_PATH = bundledDocenginePath();
+const QPDF_PATH = bundledQpdfPath();
+const DOCSTRUCTURE_ENGINE_PATH = bundledDocstructureEnginePath();
+const DOCSTRUCTURE_MODEL_DIR = bundledDocstructureModelDir();
 
 const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif", "ico", "tga"]);
 // 相机 RAW 原片（dcraw/libraw 可解码的常见扩展名）
@@ -118,9 +156,10 @@ const pdfInput = new Set(["pdf"]);
 const pdfTextTargets = ["xlsx", "txt", "html", "docx"];
 const pdfImageTargets = ["png", "jpg"];
 const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
-const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "kgg", "mflac", "mgg", "kgma", "mmp4", "kwm"]);
-// 加密音频解锁格式（DRM 规避）。商店版（Microsoft Store）构建时隐藏这些入口，降低法律风险。
-const unlockAudioInputs = new Set(["ncm", "kgg", "mflac", "mgg", "kgma", "mmp4", "kwm"]);
+const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"]);
+// 注意（2026-08-15 起）：仅支持普通音频格式转换。其他音乐平台特殊格式
+// （NCM/KGG/mflac/mgg/kgma/mmp4/kwm/vpr 等）已下架——这些是
+// DRM 规避格式，存在法律风险，见 docs/分发与合规规范.md。
 const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv"]);
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov", "gif"];
@@ -131,7 +170,7 @@ const experimentalInputsByCategory = Object.freeze({
   document: ["wpd", "wps", "wpt"],
   spreadsheet: ["et", "ett"],
   presentation: ["dps", "dpt"],
-  audio: ["kgg", "mflac", "kwm"]
+  audio: []
 });
 const experimentalInputSet = new Set(Object.values(experimentalInputsByCategory).flat());
 const allTargets = new Set([
@@ -161,6 +200,9 @@ module.exports = {
   TESSDATA_PATH,
   DCRAW_PATH,
   DOCENGINE_PATH,
+  QPDF_PATH,
+  DOCSTRUCTURE_ENGINE_PATH,
+  DOCSTRUCTURE_MODEL_DIR,
   imageInput,
   rawInput,
   imageFormatTargets,
@@ -180,7 +222,6 @@ module.exports = {
   pdfImageTargets,
   pdfTargets,
   audioInput,
-  unlockAudioInputs,
   videoInput,
   mediaAudioTargets,
   mediaVideoTargets,

@@ -5,32 +5,163 @@
 
 const fs = require("fs");
 const fsp = require("fs/promises");
+const crypto = require("node:crypto");
 const os = require("os");
 const path = require("path");
 const yazl = require("yazl");
 const sanitize = require("sanitize-filename");
 const { PDFDocument } = require("pdf-lib");
-const { PDFTOPPM_PATH, DOCENGINE_PATH, pdfImageTargets } = require("./config");
+const { PDFTOPPM_PATH, DOCENGINE_PATH, QPDF_PATH, pdfImageTargets } = require("./config");
 const { run, commandExists, escapeHtml, safeBaseName } = require("./utils");
-const { zipFiles, openZipEntries, readZipEntryToFile } = require("./zip-util");
+const { zipFiles, openZipEntries, openZipEntriesFromBuffer, readZipEntryToFile } = require("./zip-util");
 const { convertImagesToPdf } = require("./image");
 const { ocrAvailable, createOcrWorker, recognizeImageTextWithWorker } = require("./ocr");
 const { loadPdfjs } = require("./pdfjs");
+const { classifyPdf } = require("./pdf-classifier");
 const {
   extractPdfRowsByPage,
   extractComplexPdfTableModel,
   writePdfTableWorkbook
 } = require("./pdf-table");
 const { assertPdfPages } = require("./resource-policy");
+const { mergeCnSpaces } = require("./pdf-table-runtime");
 const { OfficeQualityError } = require("./office-quality");
+const { withStructuredPdf } = require("./pdf-structure-engine");
+const { chooseTableCandidate } = require("./pdf-structure-score");
+const { structureError } = require("./pdf-structure-contract");
+const { writePdfOfficeDocx } = require("./pdf-office-docx");
+const { writePdfOfficeXlsx } = require("./pdf-office-xlsx");
+const { parseXmlToJson } = require("./xml-json");
 
 async function convertPdfDecrypt(inputPath, outputPath, password) {
+  const pwd = String(password || "");
+  // 优先用 qpdf（支持 RC4/AES-128/AES-256，含本应用 qpdf 加密的 AES-256 输出）；
+  // qpdf 缺失时回退 pdf-lib（仅支持 RC4/AES-128，兜底）。
+  if (await commandExists(QPDF_PATH, ["--version"])) {
+    const args = pwd
+      ? [`--password=${pwd}`, "--decrypt", "--", inputPath, outputPath]
+      : ["--decrypt", "--", inputPath, outputPath];
+    await run(QPDF_PATH, args, { timeout: 1000 * 60 * 5 });
+    return;
+  }
   const data = await fsp.readFile(inputPath);
-  const pdf = await PDFDocument.load(data, { password, ignoreEncryption: false });
+  const pdf = await PDFDocument.load(data, { password: pwd, ignoreEncryption: false });
   await fsp.writeFile(outputPath, await pdf.save());
 }
 
+async function convertPdfEncrypt(inputPath, outputPath, password) {
+  const pwd = String(password || "").trim();
+  if (!pwd) {
+    const error = new Error("加密 PDF 需要先设置密码。");
+    error.code = "PDF_ENCRYPT_NO_PASSWORD";
+    error.messages = {
+      zhCN: "加密 PDF 需要先设置密码。",
+      enUS: "A password is required to encrypt the PDF."
+    };
+    throw error;
+  }
+  if (!(await commandExists(QPDF_PATH, ["--version"]))) {
+    const error = new Error("PDF 加密引擎（qpdf）不可用，请确认安装包完整。");
+    error.code = "PDF_ENCRYPT_UNAVAILABLE";
+    error.messages = {
+      zhCN: "PDF 加密引擎（qpdf）不可用，请确认安装包完整。",
+      enUS: "PDF encryption engine (qpdf) is unavailable. Verify the installation bundle is complete."
+    };
+    throw error;
+  }
+  await run(QPDF_PATH, ["--encrypt", pwd, pwd, "256", "--", inputPath, outputPath], { timeout: 1000 * 60 * 5 });
+}
+
 const OCR_QUALITY_THRESHOLD = 0.65;
+
+function selectedStructureManifest(manifest) {
+  const copy = structuredClone(manifest);
+  copy.pages = (copy.pages || []).map((page) => {
+    if (!Array.isArray(page.tableCandidates)) return page;
+    const selected = chooseTableCandidate(page.tableCandidates).table;
+    const copyPage = { ...page, tables: [structuredClone(selected)] };
+    delete copyPage.tableCandidates;
+    return copyPage;
+  });
+  return copy;
+}
+
+function tableNotDetectedError() {
+  return structureError(
+    "PDF_TABLE_NOT_DETECTED",
+    "未检测到可可靠编辑的表格，无法生成 Excel。",
+    "No reliably editable table was detected, so an Excel workbook cannot be created."
+  );
+}
+
+async function outputInfo(outputPath) {
+  try {
+    return await fsp.lstat(outputPath);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function publishAttempt(attemptPath, outputPath) {
+  const existing = await outputInfo(outputPath);
+  if (existing && (!existing.isFile() || existing.isSymbolicLink())) {
+    throw new Error("unsafe output target");
+  }
+  if (!existing) {
+    await fsp.rename(attemptPath, outputPath);
+    return;
+  }
+  const backupPath = `${outputPath}.backup-${crypto.randomUUID()}`;
+  await fsp.rename(outputPath, backupPath);
+  try {
+    await fsp.rename(attemptPath, outputPath);
+  } catch (error) {
+    try {
+      await fsp.rename(backupPath, outputPath);
+    } catch {
+      await fsp.copyFile(backupPath, outputPath).catch(() => {});
+    }
+    throw error;
+  }
+  await fsp.rm(backupPath, { force: true }).catch(() => {});
+}
+
+async function withAttemptOutput(outputPath, produce) {
+  const attemptPath = `${outputPath}.attempt-${crypto.randomUUID()}`;
+  try {
+    const result = await produce(attemptPath);
+    const info = await fsp.lstat(attemptPath);
+    if (!info.isFile() || info.isSymbolicLink() || info.size < 1) throw new Error("invalid attempt output");
+    await publishAttempt(attemptPath, outputPath);
+    return result;
+  } finally {
+    await fsp.rm(attemptPath, { force: true }).catch(() => {});
+  }
+}
+
+async function convertStructuredPdf({ inputPath, outputPath, target, options = {} }) {
+  const boundary = options.withStructuredPdf || withStructuredPdf;
+  return boundary(inputPath, options, async (manifest, assetRoot) => {
+      const selected = selectedStructureManifest(manifest);
+      if (target === "xlsx") {
+        const tables = selected.pages.reduce((total, page) => total + (page.tables || []).length, 0);
+        if (tables === 0) throw tableNotDetectedError();
+        return withAttemptOutput(outputPath, (attemptPath) =>
+          (options.writePdfOfficeXlsx || writePdfOfficeXlsx)({
+            manifest: selected, assetRoot, outputPath: attemptPath
+          }));
+      }
+      if (target === "docx") {
+        return withAttemptOutput(outputPath, (attemptPath) =>
+          (options.writePdfOfficeDocx || writePdfOfficeDocx)({
+            manifest: selected, assetRoot, outputPath: attemptPath
+          }));
+      }
+      throw structureError("PDF_STRUCTURE_TARGET_UNSUPPORTED",
+        "不支持该结构化输出格式。", "Unsupported structured PDF target.");
+  });
+}
 
 function assertPdfTableOcrQuality(model) {
   const ocrPages = (model?.summary || []).filter((page) => page.source === "ocr" && page.tableCount > 0);
@@ -52,18 +183,11 @@ function assertPdfTableOcrQuality(model) {
 async function convertPdf(inputPath, outputPath, target, options = {}) {
   if (target === "pdf") {
     if (options.pdfAction === "encrypt") {
-      const error = new Error("PDF 加密功能暂不可用：当前版本缺少加密引擎，请使用系统自带或其他专业工具为 PDF 设置密码。");
-      error.code = "PDF_ENCRYPT_UNAVAILABLE";
-      error.messages = {
-        zhCN: "PDF 加密功能暂不可用：当前版本缺少加密引擎，请使用系统自带或其他专业工具为 PDF 设置密码。",
-        enUS: "PDF encryption is not available in this build. Use another tool to password-protect the PDF."
-      };
-      throw error;
-    }
-    if (options.pdfAction === "decrypt") {
+      await convertPdfEncrypt(inputPath, outputPath, options.password);
+    } else if (options.pdfAction === "decrypt") {
       await convertPdfDecrypt(inputPath, outputPath, options.password || "");
     } else {
-      await splitPdfToZip(inputPath, outputPath);
+      await splitPdfToZip(inputPath, outputPath, options);
     }
     return;
   }
@@ -71,6 +195,20 @@ async function convertPdf(inputPath, outputPath, target, options = {}) {
   if (pdfImageTargets.includes(target)) {
     await convertPdfPagesToImagesZip(inputPath, outputPath, target);
     return;
+  }
+
+  if (target === "docx" || target === "xlsx") {
+    const classification = await (options.classifyPdf || classifyPdf)(inputPath);
+    if (classification.kind !== "native") {
+      await (options.convertStructuredPdf || convertStructuredPdf)({
+        inputPath,
+        outputPath,
+        target,
+        classification,
+        options
+      });
+      return;
+    }
   }
 
   if (target === "xlsx") {
@@ -129,7 +267,7 @@ td{border:1px solid #999;padding:4px 8px;vertical-align:top}
   }
 
   if (target === "docx") {
-    await convertPdfToDocx(inputPath, outputPath, pages);
+    await convertPdfToDocx(inputPath, outputPath, pages, options);
     return;
   }
 
@@ -163,14 +301,251 @@ function writeDocxZip(outputPath, entries) {
   });
 }
 
-async function convertPdfToDocx(inputPath, outputPath, pages) {
+// 物理天花板（Node 单个 Buffer 上限约 2GB），不是业务限制：
+// 正常 DOCX 包与单个 XML part 远小于此值；此阈值仅用于在解压前拦截声明了超大量
+// uncompressedSize 的恶意 ZIP 炸弹条目，避免实际解压导致 OOM。任何正常文档都不会触及。
+const MAX_NATIVE_DOCX_PACKAGE_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_NATIVE_DOCX_XML_BYTES = 2 * 1024 * 1024 * 1024;
+const NATIVE_DOCX_PARTS = new Set([
+  "[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/_rels/document.xml.rels"
+]);
+
+function safePackageEntry(name) {
+  if (typeof name !== "string" || !name || name.includes("\\") || name.startsWith("/")) return false;
+  const candidate = name.endsWith("/") ? name.slice(0, -1) : name;
+  return Boolean(candidate) && candidate.split("/").every((piece) => piece && piece !== "." && piece !== "..");
+}
+
+async function inspectNativeDocxPackage(zipPath) {
+  // Read the whole package into memory and drive yauzl via fromBuffer: yauzl.open's
+  // fd_slicer path can silently stall on a valid deflate stream (see openZipEntriesFromBuffer).
+  let buffer;
+  try {
+    const stats = await fsp.stat(zipPath);
+    if (!stats.isFile() || stats.isSymbolicLink() || stats.size < 1) {
+      throw new Error("unsafe DOCX package file");
+    }
+    if (stats.size > MAX_NATIVE_DOCX_PACKAGE_BYTES) {
+      throw new Error("DOCX package is too large");
+    }
+    buffer = await fsp.readFile(zipPath);
+  } catch (error) {
+    if (error?.message === "DOCX package is too large") throw error;
+    throw new Error("unsafe DOCX package file");
+  }
+  const zipfile = await openZipEntriesFromBuffer(buffer);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const names = new Set();
+    const buffers = new Map();
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      try { zipfile.close(); } catch {}
+      error ? reject(error) : resolve(value);
+    };
+    zipfile.on("entry", (entry) => {
+      const size = Number(entry.uncompressedSize) || 0;
+      if (!safePackageEntry(entry.fileName) || names.has(entry.fileName) || size < 0) {
+        return finish(new Error("unsafe DOCX package entry"));
+      }
+      names.add(entry.fileName);
+      if (!NATIVE_DOCX_PARTS.has(entry.fileName)) return zipfile.readEntry();
+      if (size > MAX_NATIVE_DOCX_XML_BYTES) return finish(new Error("DOCX XML part is too large"));
+      zipfile.openReadStream(entry, (error, stream) => {
+        if (error) return finish(error);
+        const chunks = [];
+        let length = 0;
+        stream.on("data", (chunk) => {
+          length += chunk.length;
+          if (length > MAX_NATIVE_DOCX_XML_BYTES) {
+            stream.destroy(new Error("DOCX document part is too large"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        stream.on("error", finish);
+        stream.on("end", () => {
+          if (settled) return;
+          buffers.set(entry.fileName, Buffer.concat(chunks));
+          zipfile.readEntry();
+        });
+      });
+    });
+    zipfile.on("end", () => finish(null, { names, buffers }));
+    zipfile.on("error", finish);
+    zipfile.readEntry();
+  });
+}
+
+const OPC_CONTENT_TYPES_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/content-types";
+const OPC_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/relationships";
+const WORDPROCESSING_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const DRAWINGML_NAMESPACE = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const OFFICE_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+function qualifiedName(name) {
+  const separator = name.indexOf(":");
+  return separator < 0
+    ? { prefix: "", localName: name }
+    : { prefix: name.slice(0, separator), localName: name.slice(separator + 1) };
+}
+
+function namespaceElements(parsed) {
+  const elements = [];
+
+  function visit(name, value, inheritedNamespaces) {
+    const namespaces = new Map(inheritedNamespaces);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      for (const [key, declaration] of Object.entries(value)) {
+        if (key === "@xmlns") namespaces.set("", declaration);
+        else if (key.startsWith("@xmlns:")) namespaces.set(key.slice(7), declaration);
+      }
+    }
+    const qname = qualifiedName(name);
+    const attributes = [];
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      for (const [key, attributeValue] of Object.entries(value)) {
+        if (!key.startsWith("@") || key === "@xmlns" || key.startsWith("@xmlns:")) continue;
+        const attributeName = qualifiedName(key.slice(1));
+        attributes.push({
+          namespaceURI: attributeName.prefix ? namespaces.get(attributeName.prefix) || "" : "",
+          localName: attributeName.localName,
+          value: attributeValue
+        });
+      }
+    }
+    elements.push({
+      namespaceURI: namespaces.get(qname.prefix) || "",
+      localName: qname.localName,
+      text: typeof value === "string" ? value : value?.["#text"] || "",
+      attributes
+    });
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    for (const [childName, childValue] of Object.entries(value)) {
+      if (childName.startsWith("@") || childName === "#text") continue;
+      for (const child of Array.isArray(childValue) ? childValue : [childValue]) {
+        visit(childName, child, namespaces);
+      }
+    }
+  }
+
+  for (const [rootName, rootValue] of Object.entries(parsed)) visit(rootName, rootValue, new Map());
+  return elements;
+}
+
+function parseNamespaceDocument(xml) {
+  const elements = namespaceElements(parseXmlToJson(xml));
+  if (elements.length === 0) throw nativeDocxInvalid();
+  return { root: elements[0], elements };
+}
+
+function elementsNamed(elements, namespaceURI, localName) {
+  return elements.filter((element) =>
+    element.namespaceURI === namespaceURI && element.localName === localName);
+}
+
+function rootNamed(document, namespaceURI, localName) {
+  return document.root.namespaceURI === namespaceURI && document.root.localName === localName;
+}
+
+function elementAttribute(element, namespaceURI, localName) {
+  return element.attributes.find((attribute) =>
+    attribute.namespaceURI === namespaceURI && attribute.localName === localName)?.value || "";
+}
+
+function nativeDocxInvalid() {
+  const error = new Error("Native PDF conversion produced an invalid DOCX package.");
+  error.code = "PDF_OFFICE_OUTPUT_INVALID";
+  return error;
+}
+
+async function validateNativePdfDocx(outputPath) {
+  try {
+    const inspected = await inspectNativeDocxPackage(outputPath);
+    const contentTypes = inspected.buffers.get("[Content_Types].xml")?.toString("utf8");
+    const rootRelationships = inspected.buffers.get("_rels/.rels")?.toString("utf8");
+    const documentXml = inspected.buffers.get("word/document.xml")?.toString("utf8");
+    if (!contentTypes || !rootRelationships || !documentXml) throw nativeDocxInvalid();
+    const contentTypeDocument = parseNamespaceDocument(contentTypes);
+    const rootRelationshipDocument = parseNamespaceDocument(rootRelationships);
+    const wordDocument = parseNamespaceDocument(documentXml);
+    if (!rootNamed(contentTypeDocument, OPC_CONTENT_TYPES_NAMESPACE, "Types")
+      || !rootNamed(rootRelationshipDocument, OPC_RELATIONSHIPS_NAMESPACE, "Relationships")
+      || !rootNamed(wordDocument, WORDPROCESSING_NAMESPACE, "document")) {
+      throw nativeDocxInvalid();
+    }
+    const contentTypeElements = contentTypeDocument.elements;
+    const rootRelationshipElements = rootRelationshipDocument.elements;
+    const documentElements = wordDocument.elements;
+    const mainOverride = elementsNamed(contentTypeElements, OPC_CONTENT_TYPES_NAMESPACE, "Override")
+      .some((element) => elementAttribute(element, "", "PartName") === "/word/document.xml"
+        && elementAttribute(element, "", "ContentType")
+          === "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
+    const mainRelationship = elementsNamed(rootRelationshipElements, OPC_RELATIONSHIPS_NAMESPACE, "Relationship")
+      .some((element) => elementAttribute(element, "", "Type").endsWith("/officeDocument")
+        && elementAttribute(element, "", "Target") === "word/document.xml"
+        && !elementAttribute(element, "", "TargetMode"));
+    if (!mainOverride || !mainRelationship) throw nativeDocxInvalid();
+
+    const blips = elementsNamed(documentElements, DRAWINGML_NAMESPACE, "blip");
+    const blipIds = blips
+      .map((element) => elementAttribute(element, OFFICE_RELATIONSHIPS_NAMESPACE, "embed"));
+    if (blipIds.some((id) => !id)) throw nativeDocxInvalid();
+    if (blipIds.length) {
+      const documentRelationships = inspected.buffers.get("word/_rels/document.xml.rels")?.toString("utf8");
+      if (!documentRelationships) throw nativeDocxInvalid();
+      const documentRelationshipDocument = parseNamespaceDocument(documentRelationships);
+      if (!rootNamed(documentRelationshipDocument, OPC_RELATIONSHIPS_NAMESPACE, "Relationships")) {
+        throw nativeDocxInvalid();
+      }
+      const documentRelationshipElements = documentRelationshipDocument.elements;
+      const relationships = new Map();
+      for (const element of elementsNamed(documentRelationshipElements, OPC_RELATIONSHIPS_NAMESPACE, "Relationship")) {
+        const id = elementAttribute(element, "", "Id");
+        if (!id || relationships.has(id)) throw nativeDocxInvalid();
+        relationships.set(id, {
+          type: elementAttribute(element, "", "Type"), target: elementAttribute(element, "", "Target"),
+          mode: elementAttribute(element, "", "TargetMode")
+        });
+      }
+      for (const id of blipIds) {
+        const relationship = relationships.get(id);
+        if (!relationship || relationship.mode || !relationship.type.endsWith("/image")
+          || !relationship.target.startsWith("media/") || !safePackageEntry(relationship.target)
+          || !inspected.names.has(`word/${relationship.target}`)) throw nativeDocxInvalid();
+      }
+    }
+
+    const editableText = elementsNamed(documentElements, WORDPROCESSING_NAMESPACE, "t")
+      .some((element) => String(element.text).trim().length > 0);
+    if (!editableText) {
+      const error = new Error("Native PDF conversion produced no editable content.");
+      error.code = "PDF_DOCX_NO_EDITABLE_CONTENT";
+      throw error;
+    }
+    return { hasEditableContent: true };
+  } catch (error) {
+    if (["PDF_DOCX_NO_EDITABLE_CONTENT", "PDF_OFFICE_OUTPUT_INVALID"].includes(error?.code)) throw error;
+    throw nativeDocxInvalid();
+  }
+}
+
+async function convertPdfToDocx(inputPath, outputPath, pages, options = {}) {
   // 优先用文档引擎（docengine convert）做版式还原（段落/表格/图片/字体）；引擎缺失或转换失败时回退到 PDF.js 文字提取。
-  if (DOCENGINE_PATH) {
+  const docenginePath = options.docenginePath === undefined ? DOCENGINE_PATH : options.docenginePath;
+  if (docenginePath) {
     try {
-      await run(DOCENGINE_PATH, ["convert", inputPath, outputPath], { timeout: 1000 * 60 * 10 });
+      await withAttemptOutput(outputPath, async (attemptPath) => {
+        await (options.run || run)(docenginePath, ["convert", inputPath, attemptPath], { timeout: 1000 * 60 * 10 });
+        return (options.validateNativeDocx || validateNativePdfDocx)(attemptPath);
+      });
       return;
     } catch (error) {
-      // 文档引擎转换失败（异常 PDF）→ 回退到文字提取，不中断转换。
+      await (options.convertStructuredPdf || convertStructuredPdf)({
+        inputPath, outputPath, target: "docx", options
+      });
+      return;
     }
   }
 
@@ -226,7 +601,47 @@ ${body.join("\n")}
   ]);
 }
 
-async function splitPdfToZip(inputPath, outputPath) {
+async function splitPdfToZip(inputPath, outputPath, options = {}) {
+  const mode = String(options.splitMode || "page");
+  const groupSize = Math.max(1, Math.floor(Number(options.groupSize) || 1));
+  const splitPages = mode === "group" ? groupSize : 1;
+
+  // qpdf 可用时用 --split-pages（支持逐页 / 每 N 页一组，速度快）；否则回退 pdf-lib 逐页拆分。
+  if (await commandExists(QPDF_PATH, ["--version"])) {
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-split-"));
+    try {
+      const prefix = path.join(tempDir, "page-%d.pdf");
+      await run(QPDF_PATH, [`--split-pages=${splitPages}`, inputPath, prefix], { timeout: 1000 * 60 * 5 });
+      const entries = (await fsp.readdir(tempDir))
+        .filter((name) => name.endsWith(".pdf"))
+        .sort()
+        .map((name) => {
+          // qpdf 命名：逐页 = page-N.pdf，分组 = page-N-M.pdf（末组单页也是 page-N-N.pdf）。
+          // 统一补零为 page-001.pdf / page-001-002.pdf，与 pdf-lib 回退路径命名一致，
+          // 保证排序稳定、断言不因引擎而异。保留原始形态：单页不加范围后缀，分组保留 -M。
+          const single = /^page-(\d+)\.pdf$/.exec(name);
+          const ranged = /^page-(\d+)-(\d+)\.pdf$/.exec(name);
+          let archiveName;
+          if (single) {
+            archiveName = `page-${String(Number(single[1])).padStart(3, "0")}.pdf`;
+          } else if (ranged) {
+            archiveName = `page-${String(Number(ranged[1])).padStart(3, "0")}-${String(Number(ranged[2])).padStart(3, "0")}.pdf`;
+          } else {
+            archiveName = name;
+          }
+          return { inputPath: path.join(tempDir, name), archiveName };
+        });
+      if (!entries.length) {
+        throw new Error("PDF 拆分失败，未生成任何页面。");
+      }
+      await zipFiles(entries, outputPath);
+    } finally {
+      await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+    return;
+  }
+
+  // 回退：pdf-lib 逐页拆分（不依赖 qpdf）
   const src = await PDFDocument.load(await fsp.readFile(inputPath), { ignoreEncryption: true });
   assertPdfPages(src.getPageCount());
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-split-"));
@@ -355,14 +770,18 @@ async function ocrScannedPdfPages(inputPath) {
     throw error;
   }
 
-  const rendered = await renderPdfPages(inputPath, "png", 300, { ocr: true });
+  // 扫描版 OCR 用 200 DPI 渲染：手机扫描 PDF 内嵌图片实际约 200 DPI，
+  // 300 DPI 渲染会上采样产生伪影，导致大标题误判（实测「购货合同」→ 乱码）；
+  // 200 DPI 更贴合原始分辨率，再经 prepareImageForOcr 放大到 2480 补偿清晰度。
+  const rendered = await renderPdfPages(inputPath, "png", 200, { ocr: true });
   let worker = null;
   try {
     worker = await createOcrWorker();
     const pages = [];
     for (let index = 0; index < rendered.files.length; index += 1) {
       const text = await recognizeImageTextWithWorker(worker, rendered.files[index]);
-      pages.push({ name: `Page ${index + 1}`, text: String(text || "").trim() });
+      // 中文 OCR 拆字空格合并（`纳税 人 名 称` → `纳税人名称`），提升扫描件文本可读性
+      pages.push({ name: `Page ${index + 1}`, text: String(mergeCnSpaces(text) || "").trim() });
     }
     if (!pages.some((page) => page.text)) {
       throw new Error("OCR 没有识别出文字。请确认 PDF 扫描页清晰、文字方向正确。");
@@ -468,11 +887,13 @@ async function convertZipImagesToPdf(inputPath, outputPath) {
 module.exports = {
   convertPdfDecrypt,
   assertPdfTableOcrQuality,
+  convertStructuredPdf,
   convertPdf,
   xmlDocxText,
   xmlDocxParagraph,
   writeDocxZip,
   convertPdfToDocx,
+  validateNativePdfDocx,
   splitPdfToZip,
   mergePdfFiles,
   renderPdfPages,

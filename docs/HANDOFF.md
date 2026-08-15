@@ -1,20 +1,58 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-14（v0.5.2 开发中：KWM 解密 + 批量上限修复 + Agent 接入修复 + 文件夹命名 PDF + 著作权标注 + Office 误报修复；本地打包同步中，未发版）
+更新时间：2026-08-14（revert 0774349 已恢复 v0.5.2 内容——KWM 解密/批量上限/Agent 接入/文件夹命名 PDF/中文文件名乱码修复/Office 误报修复；OCR 精准度 + KGG 密钥库剪枝 + 真实 RAW 验收 + 同步本地均已收尾；待 push/发版 + 外部验收）
 
-## 待办（下一窗口）
+## 待办（下一窗口，2026-08-14）
 
-- ① v0.5.2 未发版：本次改动已分块提交并推送 main（8 个提交），本地打包同步中；待用户确认后：全量测试 → 本地打包 → asar 验证 → CI tag 发版 → 123 云盘分发
-- ② **Word→PDF 不精确（用户指定下一个窗口处理）**：日志抓到《博物志》docx→pdf 失败，根因已定位并修复=OFFICE_ENGINE_PROFILE_FAILED 误报（classifyExecutionError 正则太宽，把 stderr 里的 "profile" 字样误判成配置创建失败，实际是转换失败）；**但用户说的「word 转 pdf 不精确」还需真实样本**——用户计划另开窗口把那个 PDF 转成 Word 文档，解决后再统一发布。需用户提供原 docx/pdf 样本复现「不精确」现象
-- ③ 真实 KWM 样本已用用户 3 首歌验证，fixture 已入库 tests/fixtures/sample.kwm（9.9MB，可留可删）
-- ④ 用户 3 首 kwm 已直接转成 MP3 放 Downloads（白兰的-得意的笑.mp3 / 田园-这些年在忙什么 (民谣版).mp3 / Zhen Zhen （半夏水玉）-目瑙纵歌.mp3）
-- ⑤ 真实 RAW 样本验收（无真实相机样张）
-- ⑥ 真实 Win7/Mac 物理设备验收
-- ⑦ Partner Center 现场回读 v0.5.1 认证/发布状态 + Store listing 图标素材为鼠鼠（用户本人）
-- ⑧ 清理临时产物：output/.trash-*、scripts/.trash-tmp/、scripts/tmp-*（会话临时脚本，用户确认后删）
-- ⑨ 123 云盘上传：v0.5.1 四平台安装包（用户操作中）；分享需设「直链/免登录下载」
-- ⑩ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，许可页附文本 + 源码链接）
-- ⑪ **著作权标注已落地（已推送）**：LICENSE 从 MIT 换非商用许可（作者牢蜂/抖音 3869421365）；README/AGENTS.md/UI 作者行/CLI help/diagnostics 已标注；GitHub 上 v0.5.1 Release body 已就地修正（原来误显示 RELEASE.md 发布流程）+ v0.3.5 的 MIT 表述已替换；商店材料（微软商店上架清单/上架材料包）待补作者+非商用声明；发布前检查 Release notes 与包内版本号一致
+- ① **push 到 GitHub**：本地领先 origin/main 十几个提交（OCR 精准度 3 个 + PDF→Word 粘连降级 + KGG 自动搜索/剪枝/教程 + PDF 加密/解密/拆分 + 竖线阈值 + Office CRC + 合规 c6c6b04）。push 走代理 `HTTPS_PROXY=http://127.0.0.1:7897`
+- ② **打包 + 打 tag + 发版**（等用户明确说）：发版前须补 qpdf 进 ci-engines-v1.json / restore-ci-engines.ps1 分发链（当前只进 package.json extraResources，CI 产物会缺 qpdf，加密/解密/拆分退化）
+- ③ 酷我 KWM：算法已实现并实测，真实 3 首歌已转 MP3 放 Downloads（白兰的-得意的笑.mp3 / 田园-这些年在忙什么 (民谣版).mp3 / Zhen Zhen（半夏水玉）-目瑙纵歌.mp3）；revert 0774349 已恢复 v0.5.2 内容，等用户说上传再推
+- ④ 真实 Win7 / Mac 物理设备验收
+- ⑤ Partner Center 现场回读 v0.5.1 认证/发布状态 + Store listing 图标素材为鼠鼠（用户本人）
+- ⑥ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，许可页附文本 + 源码链接）
+- ⑦ 用户重启软件后实测：扫描全能王 PDF→DOCX（标题「购货合同」+ 正文正常）、KGG 本机下载歌解密
+
+## 2026-08-14：OCR 精准度 + KGG 密钥库剪枝 + RAW 验收（本次窗口收尾）
+
+### OCR 精准度（4 个 commit：7db69f6 / ad97770 / e09ef21 / f490c35）
+- 根因链：泰文模型抢认中文 → 乱码；缩放 1600px 偏低 → 小字漏识别；渲染 DPI 300 上采样 → 大标题伪影误判。
+- 修复：语言集 eng+chi_sim+tha → eng+chi_sim；缩放目标 1600→2480（≈300 DPI）；扫描版 OCR 渲染 DPI 300→200（贴合手机扫描件原始分辨率，再由缩放放大补偿）；PDF→Word docengine 输出单词粘连时自动降级 OCR（含测试）。
+- 实测：扫描全能王合同首页 OCR 字符 1836→2220（+21%），标题「购货合同」+ 12 个产品名 + 材质列全对；全量 349 = 347 过 + 2 skip + 0 fail。
+
+### KGG 密钥库（3 个 commit：cf98db8 / 716f301 / 641ef97）
+- 自动搜索（跨平台递归定位 KGMusicV3.db）→ 剪枝（只深入 kugou/kgmusic/酷狗 与 macOS 沙盒通用层，MAX_VISITED 5000，避开全盘扫）→ 详细 4 步排查报错 + README 补 KGG 功能/密钥说明 + 新增 docs/酷狗KGG密钥库手动指定教程.md。
+- styles.css .status-box 加 white-space:pre-line 让多行报错换行。
+
+### 同步本地 + RAW 验收 + 清理
+- 同步：两处安装目录（%LOCALAPPDATA%\Programs\FlyingMouse Format + C:\Users\34615\飞鼠格式\FlyingMouse Format）与 dist/win-unpacked 的 app.asar md5 一致（fbc07ee...），OCR + KGG 改动均已进包，无需重打。
+- RAW：raw.pixls.us 下载真实 Nikon D750 NEF（6032×4032）走 convertImage 真实路径 NEF→JPG/PNG 成功，补齐待办「真实 RAW 样本验收」。
+- 清理：50 个 scripts/tmp-*.js + .tmp-ocr-probe/ + .raw-samples/ + tmp-docx-dump.py + verify-*.js 全部删除，工作区干净。
+
+### 并行会话冲突（合规任务，已处理）
+- 另一窗口做「法律风险合规 5 项」（c6c6b04），期间误重写 package.json（删 scripts/devDependencies/build，已 git checkout 恢复）、把 index.html 写到根目录、留 scripts/pdf_text_check.js（后两个已删）。多窗口并行操作同一仓库易冲突，注意。
+
+## 2026-08-14：PDF 加密/解密/分组拆分 + 扫描件竖线阈值修复（本次窗口收尾）
+
+- **PDF 加密（qpdf 实现，替换原「不可用」占位）**：
+  - 原 `convertPdf` 对 `pdfAction=encrypt` 直接抛 `PDF_ENCRYPT_UNAVAILABLE`（pdf-lib 无加密 API）。现改为 qpdf `--encrypt <pwd> <pwd> 256`（AES-256），空密码抛 `PDF_ENCRYPT_NO_PASSWORD`（422），qpdf 缺失仍抛 `PDF_ENCRYPT_UNAVAILABLE`。
+  - 引擎注册：config.js 新增 `QPDF_PATH`（`FLYINGMOUSE_QPDF_PATH` env → resources/qpdf/bin/qpdf.exe → bin/qpdf/extracted/qpdf-12.4.0-msvc64/bin/qpdf.exe → 裸 qpdf）；package.json extraResources 把 `bin/qpdf/extracted/qpdf-12.4.0-msvc64` 打进安装包 `qpdf` 目录（上一窗口已加但没进 ci-engines 分发链，见「风险」）。
+  - server.js `/api/convert`：PDF→PDF 加密/解密时输出单 `.pdf`（不走 .pdf.zip）；`PDF_ENCRYPT_NO_PASSWORD` 归入 422 客户端错误列表。
+- **PDF 解密改走 qpdf**：原 `convertPdfDecrypt` 用 pdf-lib `PDFDocument.load({password})`，**只支持 RC4/AES-128，解不开应用自己 qpdf 加密的 AES-256 输出**（往返断裂，实测 pdf-lib 抛「Input document is encrypted」）。现改为 qpdf `--password=<pwd> --decrypt`（注意 qpdf 要求 `--password=` 用等号，不能拆两个参数），qpdf 缺失回退 pdf-lib。
+- **PDF 拆分细化**：`splitPdfToZip` 支持 `splitMode=page`（逐页）/ `splitMode=group`（每 N 页一组，`--split-pages=N`），qpdf 可用走 qpdf（快），缺失回退 pdf-lib 逐页。qpdf 输出命名统一补零（`page-N.pdf`→`page-001.pdf`，`page-N-M.pdf`→`page-001-002.pdf`），与 pdf-lib 回退命名一致，断言不因引擎而异。
+- **前端 UI**：新增「拆分方式」下拉（逐页 / 每 N 页一组）+「每几页一组」输入框；密码框只在加密/解密显示，拆分方式只在拆分显示，分组输入框只在 group 显示；中英 i18n 齐全。
+- **扫描件竖线阈值修复**：见待办 ③。根因：0.05 太激进，把单个字形的竖笔（约占页高 10%）当表格竖线，碎片化网格 → OCR 置信度 56% 触发 `PDF_TABLE_OCR_LOW_QUALITY`。0.20 是实测裕量点（真实扫描件竖线 32% > 0.20 > 字形竖笔 10.5%）。
+- **测试**：conversion.test.js 新增加密成功（断言 /Encrypt 标记 + 无密码打不开）、空密码 422、解密往返（加密→解密→可读）；新增分组拆分（5 页 groupSize=2 → 3 组 page-001-002/003-004/005-005）；pdf-table-runtime.test.js 新增竖线阈值回归（32% 收、10% 滤）；ui-static.test.js 新增 pdfSplitMode/pdfGroupSize 双语断言。全量 344 = 342 过 + 2 skip + 0 fail。
+- **风险（待解决）**：qpdf 引擎只进了 package.json extraResources，**尚未进 ci-engines-v1.json / scripts/restore-ci-engines.ps1 的目录列表**。CI 打包时 bin/qpdf 不会被恢复，extraResources 会引用不存在的路径 → 标准版安装包缺 qpdf，加密/解密/分组拆分在 CI 产物上会退化成 UNAVAILABLE 或 pdf-lib 逐页回退。发版前必须补：ci-engines-v1.json requiredFiles 加 qpdf、restore-ci-engines.ps1 目录列表加 "qpdf"、重新 tar.zst 打包并更新 sha256。
+
+## 2026-08-14：GitHub 回滚 + Word→PDF CRC 修复
+
+- **GitHub 回滚**：main 从 4520e21（含 v0.5.2 新内容）回滚到 0774349（= v0.5.1 发布内容 + 著作权标注 + release.yml notes 文件名修复）。v0.5.2 新功能（KWM 解密/空白页/文件夹命名 PDF/批量上限/中文文件名乱码修复/Agent 接入/诊断格式改进/Office 误报修复，共 16 个 v0.5.2 独有文件）已从 GitHub 移除；本地 git 历史完整保留全部 v0.5.2 代码，等用户说上传再推。
+- **Word→PDF CRC 修复**（本次窗口，根因定位 + 实现 + 验证）：
+  - 根因：用户《博物志》docx（微信传输，7.2MB）的 `word/media/` 图片用 store + data descriptor 打包，但 central directory 与 data descriptor 的 CRC 字段全写 0（生成工具未计算）。LibreOffice 严格校验 zip CRC 会整体拒绝加载（stderr `Error: source file could not be loaded`，exit 1），MS Word 容错所以能正常打开。此前被 `classifyExecutionError` 误判为 OFFICE_ENGINE_PROFILE_FAILED。
+  - 修复：office-convert.js 新增 `findCrcBrokenZipEntries`（扫描 central directory，找 CRC=0 且 compSize>0 的 entry）+ `repairZipCrcIfNeeded`（读所有 entry + yazl 重打包重算 CRC，store/deflate 均保留原压缩方式），`convertWithLibreOffice` 转换前先调用（对所有 zip-based office 输入生效，非 zip 自动跳过）。
+  - 验证：tests/office-crc-repair.test.js 3 项；全量 339 = 337 过 + 2 skip + 0 fail；《博物志》docx→pdf 端到端实测 40 页成功（原报 PROFILE_FAILED）。
+  - 关联：office-engine.js 的 `classifyExecutionError` 正则收窄（上一窗口已做，工作树未提交）——把 soffice 正常噪音 `Could not find platform independent libraries` 里的 "profile" 字样误判 PROFILE_FAILED 的问题已收窄。
+
 
 ## v0.5.2 开发中（2026-08-14 会话）
 
@@ -25,15 +63,17 @@
 - **Agent 接入修复**（agent-skill-installer.js）：copyDirectorySafe 从 fsp.cp 改为 readdir+readFile/writeFile 逐文件复制——**根因：打包后 skill 源在 app.asar（Electron 只读虚拟文件系统），asar 补丁不覆盖 fs.cp，安装必抛 ENOENT**。Electron 实测从已装版 asar 完整装到 ~/.codex/skills 并端到端跑通 CLI；新增回归测试
 - **诊断格式改进**（diagnostics.js）：Convert 事件行不再整行抹成 [REDACTED_FILE]，只替换引号内文件名；文件头加 Author/License 行
 - **文件夹命名 PDF**（public/ 三件套 + server.js）：drop 支持 webkitGetAsEntry 递归收集文件夹，新增「选择文件夹转 PDF」按钮（webkitdirectory input）；state.folderName 从 webkitRelativePath 首段取，/api/convert-images-to-pdf 接收 folderName 输出 `<文件夹名>.pdf`
-- **著作权标注**：LICENSE 换非商用许可（中英双语）；README/AGENTS.md/UI author-line/cli.js help/diagnostics 全部标注作者（牢蜂 · 抖音 3869421365）+ 禁止商用
+- **著作权标注**：LICENSE 换非商用许可（中英双语）；README/AGENTS.md/UI author-line/cli.js help/diagnostics 全部标注作者（牢蜂）+ 禁止商用
 - **Office 误报修复**（office-engine.js）：classifyExecutionError 正则收窄，stderr 含 "profile" 字样不再误判为 PROFILE_FAILED（《博物志》docx 事故根因）；新增回归测试
+- **中文文件名乱码修复**（utils.js）：decodeUploadFileName 增加 GBK mojibake 解码（curl/命令行/微信传输场景，°×À¼µÄ → 白兰的）；UTF-8 mojibake 解码成功即返回不再二次转换；tests/utils.test.js 6 项
+- **图片合并 PDF 插入空白页**（public/server/image）：队列每项「□+」插入空白页 + ✕ 删除，可与 ↑/↓ 排序组合；blanks 参数从后往前插入；纯白 A4 页（595×842pt）；E2E 3图+2空白页=5页验证通过；批量文件数无硬上限（取决于本地配置），前端「2GB」文案更新
 - **release.yml 修复**：NOTES 文件名生成 `${var//./}` 误删 .md 扩展名点（v0.5.1 Release 显示 RELEASE.md 内容的根因），改为先对版本号去点
 - 版本号 0.5.1 → 0.5.2（package.json/package-lock/win7-package-lock/README/release-notes-052.md 已建）
 
 ### 测试
 
-- 全量 374 = 372 pass + 2 skip（NCM/KGG fixture 缺失属正常）+ 0 fail（2026-08-14 实测）
-- 新增：kwm-format.test.js 9 项、agent-skill-installer 只读源回归 1 项、ui-static 2 项（文件夹入口 + 作者标注）、office-engine 误报回归 1 项
+- 全量 376 = 374 pass + 2 skip（NCM/KGG fixture 缺失属正常）+ 0 fail（2026-08-14 实测）
+- 新增：kwm-format.test.js 9 项、agent-skill-installer 只读源回归 1 项、ui-static 3 项（文件夹入口 + 作者标注 + 空白页）、office-engine 误报回归 1 项、utils 6 项、conversion 空白页集成 1 项
 
 ## v0.5.1 已发布（2026-08-13 晚）
 

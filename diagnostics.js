@@ -63,6 +63,13 @@ function safeField(value) {
 }
 
 function engineLine(name, details = {}) {
+  if (name === "docstructure") {
+    const fields = [details.available ? "available" : "unavailable"];
+    if (details.engineVersion) fields.push(`engineVersion=${safeField(details.engineVersion)}`);
+    if (details.modelLockVersion) fields.push(`modelLockVersion=${safeField(details.modelLockVersion)}`);
+    if (details.errorCode) fields.push(`errorCode=${safeField(details.errorCode)}`);
+    return `- docstructure: ${fields.join("; ")}`;
+  }
   const fields = [details.enabled ? "enabled" : "disabled"];
   if (details.version) fields.push(`version=${safeField(details.version)}`);
   if (details.errorCode) fields.push(`errorCode=${safeField(details.errorCode)}`);
@@ -86,8 +93,8 @@ function buildDiagnosticsReport(input = {}) {
     `App version: ${safeField(input.appVersion)}`,
     `OS: ${safeField(input.platform)} ${safeField(input.release)} ${safeField(input.arch)}`,
     `Package: ${safeField(input.packageType)}`,
-    "Author: 牢蜂 (LaoFeng), Douyin: 3869421365",
     "License: Non-Commercial. Commercial resale or rebranding is prohibited.",
+    "Notice: This software supports only ordinary audio format conversion and does not support encrypted special formats from any music platform. Please support the artists.",
     "",
     "Engines:",
     ...(engines.length ? engines.map(([name, details]) => engineLine(name, details)) : ["- unavailable"]),

@@ -100,7 +100,7 @@ function normalizeOcrResult(result) {
   visit(root);
 
   const seenWords = new Set();
-  return candidates.flatMap((entry) => {
+  const words = candidates.flatMap((entry) => {
     const text = String(entry.text || "").trim();
     if (!text) return [];
     const bbox = entry.bbox;
@@ -113,6 +113,38 @@ function normalizeOcrResult(result) {
     seenWords.add(key);
     return [{ text, x, y, width, height, confidence: normalizeConfidence(entry.confidence) }];
   }).sort((left, right) => left.y - right.y || left.x - right.x);
+  return mergeOcrChineseWords(words);
+}
+
+// 中文 OCR 拆字合并：Tesseract 常把密集中文按「单字」拆成独立 word 且坐标抖动
+// （实测 `零 申 报 确认 表` 各字独立、同行 y 差可达 13px），导致列锚点聚类失败。
+// 把「同行 + x 邻近（含小重叠）」的中文碎片合并成词（仅限含汉字的 word，英文/数字不动）。
+function mergeOcrChineseWords(words) {
+  const merged = [];
+  for (const word of [...words].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const prev = merged.length ? merged[merged.length - 1] : null;
+    const isCn = (text) => /[\u4e00-\u9fff]/.test(text);
+    if (prev && isCn(prev.text) && isCn(word.text)) {
+      const prevCenterY = prev.y + prev.height / 2;
+      const centerY = word.y + word.height / 2;
+      const gap = word.x - (prev.x + prev.width);
+      if (Math.abs(centerY - prevCenterY) <= 12 && gap <= 14 && gap >= -60) {
+        prev.text += word.text;
+        prev.width = word.x + word.width - prev.x;
+        prev.height = Math.max(prev.height, word.height);
+        prev.confidence = Math.min(prev.confidence ?? 1, word.confidence ?? 1);
+        continue;
+      }
+    }
+    merged.push({ ...word });
+  }
+  return merged;
+}
+
+// 文本级中文空格合并：汉字之间的空格删除（`纳税 人 名 称` → `纳税人名称`），
+// 汉字与英文/数字之间的空格保留（防拆词）。
+function mergeCnSpaces(text) {
+  return String(text || "").replace(/([\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])/g, "$1");
 }
 
 function hasEffectiveText(words) {
@@ -177,6 +209,18 @@ function detectTableLinesFromRaw(options) {
   if (data.length < width * height * channels) throw new Error("Raw image buffer is smaller than its dimensions");
   const threshold = Number.isFinite(Number(options.threshold)) ? Number(options.threshold) : 160;
   const ratio = clamp(Number(options.minLengthRatio) || 0.35, 0.05, 1);
+  // 垂直线用独立的、更小的比例：表格竖线（列分隔线/外框）横贯整个表格高度，
+  // 但表格往往只占页面高度的一小部分，且整页高度可达上千像素。若沿用 height * ratio
+  // （默认 0.35 ≈ 页高 35%），横贯表格区域的竖线会被滤掉（实测 750px 竖线在 2340px
+  // 页上只占 32%，过不了 819px 阈值），导致扫描件识别不到列结构。
+  // 但也不能过低：文字笔画（单个字竖笔）约占页高 5~10%，降到 0.05 会把字形竖笔当竖线，
+  // 碎片化表格网格、拉低 OCR 置信度（实测从 65%+ 掉到 56% 触发 LOW_QUALITY 门禁）。
+  // 取 0.20：既收下真实的 32% 表格竖线，又滤掉 10.5% 的字形竖笔，两侧留足裕量。
+  const verticalRatio = clamp(Number(options.verticalMinLengthRatio) || 0.20, 0.05, 1);
+  // 绝对下限（像素）：小页面（如测试构造图 300-500px 高）上比例阈值换算的绝对像素太少，
+  // 会把字形竖笔（最长 ~40px）误当竖线；真实 A4 扫描页 0.05 ≈ 117px 安全。
+  // 取「比例换算值」与「绝对下限」的较大者。
+  const verticalMinLength = Math.max(Math.ceil(height * verticalRatio), Number(options.minVerticalLength) || 0);
   const darkAt = (x, y) => pixelIntensity(data, (y * width + x) * channels, channels) <= threshold;
   const horizontal = [];
   const vertical = [];
@@ -186,7 +230,7 @@ function detectTableLinesFromRaw(options) {
     }
   }
   for (let x = 0; x < width; x += 1) {
-    for (const run of findRuns(height, (y) => darkAt(x, y), Math.ceil(height * ratio))) {
+    for (const run of findRuns(height, (y) => darkAt(x, y), verticalMinLength)) {
       vertical.push({ axis: x, start: run.start, end: run.end });
     }
   }
@@ -254,6 +298,8 @@ async function buildPdfTableWorkbook(pages, dependencies) {
 module.exports = {
   pdfTextContentToWords,
   normalizeOcrResult,
+  mergeOcrChineseWords,
+  mergeCnSpaces,
   detectTableLinesFromRaw,
   buildPdfTableWorkbook
 };

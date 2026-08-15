@@ -252,6 +252,19 @@ test("package bundles the AV3A helper and configures its runtime path", () => {
   assert.match(runtimePaths, /avs3Decoder:\s*null/);
 });
 
+test("structured PDF engine is standard Windows-only and never claimed by Win7 or macOS", () => {
+  const packageJson = JSON.parse(readRoot("package.json"));
+  const windows = packageJson.build.win.extraResources;
+  assert.deepStrictEqual(windows.filter((item) => item.to === "docstructure"), [
+    { from: "bin/docstructure", to: "docstructure" }
+  ]);
+  assert.strictEqual(packageJson.build.mac.extraResources.some((item) => item.to === "docstructure"), false);
+
+  const { createWin7Package } = require("../win7-build-profile");
+  const profile = createWin7Package(packageJson, path.resolve(__dirname, ".."));
+  assert.strictEqual(profile.build.extraResources.some((item) => item.to === "docstructure"), false);
+});
+
 test("save dialogs restore and update the last successful directory", () => {
   const packageJson = JSON.parse(readRoot("package.json"));
   const main = readRoot("electron-main.js");
@@ -327,24 +340,6 @@ test("LibreOffice conversions without an output file surface the stable OFFICE_C
   assert.doesNotMatch(server, /throw new Error\(\s*"文档转换失败，可能是不支持这个源格式或文件已损坏。"/);
 });
 
-test("auto-updater only runs on the standard Windows build (not mac/win7/store)", () => {
-  const main = readRoot("electron-main.js");
-  assert.match(main, /process\.windowsStore\) return/);
-  // mac 无 latest-mac.yml，禁用自动更新避免 404 报错
-  assert.match(main, /process\.platform === "darwin"\) return/);
-  // win7 Legacy（Electron 22）禁用，避免 latest.yml 指向标准版（Electron 43）坑掉 Win7 用户
-  assert.match(main, /process\.versions\.electron\.split/);
-  assert.match(main, /< 30\) return/);
-});
 
-test("store build hides encrypted-audio unlock entry and rejects decryption", () => {
-  const config = readRoot("config.js");
-  const server = readRoot("server.js");
-  // config 单独列出加密解锁格式（DRM 规避，商店版隐藏）
-  assert.match(config, /unlockAudioInputs/);
-  assert.match(config, /"ncm", "kgg", "mflac", "mgg", "kgma", "mmp4"/);
-  // capabilities 商店版过滤加密格式
-  assert.match(server, /process\.windowsStore \|\| !unlockAudioInputs\.has/);
-  // 解密分发商店版拒绝，稳定错误码
-  assert.match(server, /AUDIO_UNLOCK_UNAVAILABLE_ON_STORE/);
-});
+
+
