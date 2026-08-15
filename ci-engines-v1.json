@@ -1,6 +1,6 @@
 {
   "version": "ci-engines-v1",
-  "repository": "flyingmouse-format",
+  "repository": "LaoFeng-mouse/flyingmouse-format",
   "releaseTag": "ci-engines-v1",
   "assets": {
     "win32-x64": {
