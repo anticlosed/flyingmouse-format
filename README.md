@@ -157,15 +157,15 @@ Packaged builds accept the same commands after `--cli`: use `FlyingMouse Format.
 
 ### Choose a Windows build
 
-- **Windows 10 / 11 x64 (recommended):** use `FlyingMouse-Format-Setup-0.5.2-x64.exe` with Electron 43, Sharp 0.35, and PDF.js 6.
-- **Windows 7 SP1 x64 (compatibility build):** use `FlyingMouse.Format-Setup-0.5.2-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation.
+- **Windows 10 / 11 x64 (recommended):** use `FlyingMouse-Format-Setup-0.6.1-x64.exe` with Electron 43, Sharp 0.35, and PDF.js 6.
+- **Windows 7 SP1 x64 (compatibility build):** use `FlyingMouse.Format-Setup-0.6.1-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation.
 
-The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. v0.6.0 passed Windows, native macOS arm64, and native macOS x64 automation gates plus real-sample regressions; acceptance on a physical Windows 7 SP1 x64 system is still pending. Both Windows installers are unsigned and may trigger SmartScreen.
+The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. v0.6.1 passed Windows, native macOS arm64, and native macOS x64 automation gates plus real-sample regressions; acceptance on a physical Windows 7 SP1 x64 system is still pending. Both Windows installers are unsigned and may trigger SmartScreen.
 
 ### Choose a macOS build
 
-- **Apple Silicon (M1 or newer):** use `FlyingMouse.Format-Setup-0.5.2-mac-arm64.dmg`.
-- **Intel Mac:** use `FlyingMouse.Format-Setup-0.5.2-mac-x64.dmg`.
+- **Apple Silicon (M1 or newer):** use `FlyingMouse.Format-Setup-0.6.1-mac-arm64.dmg`.
+- **Intel Mac:** use `FlyingMouse.Format-Setup-0.6.1-mac-x64.dmg`.
 
 The first macOS packages support macOS 11 or newer and are unsigned and unnotarized, so Gatekeeper may warn. Both architectures passed pinned-engine, full-conversion, bundle, and 12-second launch gates on native GitHub runners; physical Mac acceptance remains pending.
 
