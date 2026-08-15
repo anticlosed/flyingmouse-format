@@ -2,6 +2,11 @@ name: Release validation
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release/tag name (e.g. v0.6.1) — used when dispatching manually"
+        required: false
+        default: "v0.6.1"
   push:
     tags:
       - "v*"
@@ -225,7 +230,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="${{ github.ref_name }}"
+          TAG="${{ inputs.release_tag || github.ref_name }}"
           # 标准版 x64 exe/blockmap 重命名为连字符，匹配 latest.yml 的 url
           # （空格会被 GitHub 显示成点，electron-updater 按 url 下载会 404）
           cd release-assets
@@ -248,8 +253,13 @@ jobs:
           VER="${VER//./}"
           NOTES="docs/release-notes-${VER}.md"
           [ -f "$NOTES" ] || NOTES="docs/RELEASE.md"
-          gh release create "$TAG" --repo "${{ github.repository }}" \
-            --title "FlyingMouse Format $TAG" \
-            --notes-file "$NOTES" --draft
+          # release 已存在（如手动预上传资产）时跳过 create，仅补传/覆盖资产
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release $TAG already exists; uploading assets only"
+          else
+            gh release create "$TAG" --repo "${{ github.repository }}" \
+              --title "FlyingMouse Format $TAG" \
+              --notes-file "$NOTES" --draft
+          fi
           gh release upload "$TAG" release-assets/* --repo "${{ github.repository }}" --clobber
           gh release edit "$TAG" --draft=false --latest
