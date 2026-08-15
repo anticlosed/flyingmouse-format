@@ -48,12 +48,11 @@ jobs:
       - name: Probe document structure engine
         shell: powershell
         run: |
-          # 当前引擎（PyInstaller 重打包版）MODEL_MISSING 启动探针退出码为 0（旧 2.8G 引擎为 20）。
-          # 引擎将 JSON 写到 stderr，而 GH Actions powershell 默认 $ErrorActionPreference=Stop——
-          # 必须先降级，否则 NativeCommandError 直接终止步骤。
-          $ErrorActionPreference = "SilentlyContinue"
-          $status = & .\bin\docstructure\docstructure-engine.exe 2>&1 | Out-String
-          if ($LASTEXITCODE -ne 0 -or $status -notmatch '"code":"MODEL_MISSING"') {
+          # 引擎 MODEL_MISSING 启动探针退出码 20，JSON 写到 stderr。
+          # GH Actions powershell 默认 $ErrorActionPreference=Stop 会把 stderr 变 NativeCommandError，
+          # 直接 & 调用会失败；用 cmd /c 捕获 stderr 并透传真实退出码（本地实测 exit=20）。
+          $status = cmd /c "bin\docstructure\docstructure-engine.exe 2>&1"
+          if ($LASTEXITCODE -ne 20 -or $status -notmatch '"code":"MODEL_MISSING"') {
             throw 'Document structure engine startup probe failed.'
           }
 
