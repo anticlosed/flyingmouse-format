@@ -1,6 +1,13 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-21（OFD→PDF 接入 + 编号注入加固）
+更新时间：2026-08-28（old/new 历史合并 + 特殊音频输入恢复）
+
+## 2026-08-28：old/new 历史合并 + 特殊音频输入恢复
+
+- 主线历史：old 仓库 230 个原始提交（顶点 a1ab614）作为祖先，接续 new 重写后的 45 个提交；原始 new 顶点保留在 `refs/archive/new-main`，原始 old 顶点保留在 `refs/archive/old-main`。new 侧提交哈希因改父链发生变化，内容与原始提交一致。
+- 恢复的非 Microsoft Store 桌面版输入：NCM / KGG / mflac / mgg / kgma / mmp4 / KWM（ncm-format / ncm-metadata / av3a-format / kgg-format / mflac-format / kgma-format / kwm-format / audio-format-utils 模块 + 分发 + 打包白名单 + 测试）。
+- 边界：KGG、mflac、KWM 实验性；AV3A NCM 仅 Windows；musicex 部分输入需要 QQ Music 官方密钥请求；512 MB 输入/输出上限、musicex 下载预算和总时限；Microsoft Store 版隐藏并拒绝特殊音频。
+- 发布要求：README、UI、诊断报告、AGENTS、分发与合规规范已同步构建差异；历史 release notes 未改写。
 
 ## 2026-08-21：OFD→PDF 接入（@miconvert/ofd-to-pdf，纯 JS 链路）
 

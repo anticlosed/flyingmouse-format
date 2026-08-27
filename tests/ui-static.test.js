@@ -243,7 +243,7 @@ test("non-commercial notice is present in UI and styles without author attributi
   const css = readPublic("styles.css");
   assert.match(html, /class="author-line"/);
   assert.doesNotMatch(html, /牢蜂|LaoFeng/);
-  assert.match(html, /仅支持普通音乐格式转换，不支持其他音乐平台的加密特殊格式/);
+  assert.match(html, /支持普通及部分音乐平台格式转换，具体以当前支持列表为准/);
   assert.match(html, /禁止商业售卖/);
   assert.match(css, /\.author-line/);
   // 渲染器不重新引入 innerHTML

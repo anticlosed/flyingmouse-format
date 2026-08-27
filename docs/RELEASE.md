@@ -34,7 +34,7 @@ npm run dist:win7
 - Apple Silicon 与 Intel 使用不同的 SHA-256 锁定引擎，不得交叉打包或使用 Rosetta 掩盖错误架构。
 - 两个原生 runner 都必须执行完整转换、生产审计、DMG 构建、挂载检查、Mach-O 架构检查和 12 秒启动冒烟。
 - macOS DMG 当前未签名且未公证；Release 必须披露 Gatekeeper 风险和真实 Mac 设备待验收。
-- 音频仅支持普通格式（MP3/WAV/FLAC/M4A/AAC/OGG/OPUS/WMA）；不支持任何音乐平台加密特殊格式。AV3A（Audio Vivid）是 Windows 专属能力，不得在 macOS 能力矩阵中宣传。
+- 非 Microsoft Store 桌面版支持普通格式及 NCM/KGG/mflac/mgg/kgma/mmp4/KWM 输入；Microsoft Store 版隐藏并拒绝特殊音频转换。AV3A（Audio Vivid）是 Windows 专属能力，不得在 macOS 能力矩阵中宣传；部分 QQ Music musicex 输入需要已有授权和在线密钥服务。
 
 ## v0.3.5 当前基线
 

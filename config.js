@@ -158,10 +158,8 @@ const pdfInput = new Set(["pdf"]);
 const pdfTextTargets = ["xlsx", "txt", "html", "docx"];
 const pdfImageTargets = ["png", "jpg"];
 const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
-const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"]);
-// 注意（2026-08-15 起）：仅支持普通音频格式转换。其他音乐平台特殊格式
-// （NCM/KGG/mflac/mgg/kgma/mmp4/kwm/vpr 等）已下架——这些是
-// DRM 规避格式，存在法律风险，见 docs/分发与合规规范.md。
+const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "kgg", "mflac", "mgg", "kgma", "mmp4", "kwm"]);
+const unlockAudioInputs = new Set(["ncm", "kgg", "mflac", "mgg", "kgma", "mmp4", "kwm"]);
 const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv"]);
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov", "gif"];
@@ -172,7 +170,7 @@ const experimentalInputsByCategory = Object.freeze({
   document: ["wpd", "wps", "wpt"],
   spreadsheet: ["et", "ett"],
   presentation: ["dps", "dpt"],
-  audio: []
+  audio: ["kgg", "mflac", "kwm"]
 });
 const experimentalInputSet = new Set(Object.values(experimentalInputsByCategory).flat());
 const allTargets = new Set([
@@ -225,6 +223,7 @@ module.exports = {
   pdfImageTargets,
   pdfTargets,
   audioInput,
+  unlockAudioInputs,
   videoInput,
   mediaAudioTargets,
   mediaVideoTargets,

@@ -4,7 +4,7 @@
 
 FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器。主产品必须使用原版鼠鼠 UI；它与“鼠鼠打印”是两个独立项目，禁止跨项目修改或混合发布物。
 
-当前主线：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、按源格式记忆目标格式、保存目录记忆、PDF→Word 版式还原（docengine）、PDF→Excel 表格提取（camelot）、视频编码选择（H.264/H.265/AV1）、OFD→PDF（ofd-convert.js，@miconvert/ofd-to-pdf，仅支持转 PDF 不走 LibreOffice）。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27 兼容包，禁止降低根 manifest 的主线依赖。
+当前主线：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、按源格式记忆目标格式、保存目录记忆、普通及部分音乐平台音频格式转换、PDF→Word 版式还原（docengine）、PDF→Excel 表格提取（camelot）、视频编码选择（H.264/H.265/AV1）、OFD→PDF（ofd-convert.js，@miconvert/ofd-to-pdf，仅支持转 PDF 不走 LibreOffice）。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27 兼容包，禁止降低根 manifest 的主线依赖。
 
 ## Source map
 
@@ -20,6 +20,8 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - `text-conversion.js`：统一 ATX/Fenced Turndown 与严格 CSV 解析。
 - `pdf-table-extractor.js` / `pdf-table-runtime.js`：复杂 PDF 表格几何识别、OCR 回退与工作簿模型。
 - `ofd-convert.js`：OFD（国标 GB/T 33190）→ PDF，`@miconvert/ofd-to-pdf` 纯 JS 链路，仅支持转 PDF 不走 LibreOffice。
+- `ncm-format.js` / `ncm-metadata.js` / `av3a-format.js`：NCM 音频解包、元数据处理和 Windows Audio Vivid AV3A 辅助解码。
+- `kgg-format.js` / `mflac-format.js` / `kgma-format.js` / `kwm-format.js`：KGG、MFLAC/MGG/MMP4、KGMA 和 KWM 输入处理。
 - `logger.js`：主进程、服务端和渲染器共用的分级日志。
 - `win7-build-profile.js` / `scripts/build-win7.js`：派生并构建隔离的 Windows 7 manifest；根依赖不得被改写。
 - `pe-metadata.js` / `scripts/inspect-pe.js`：读取 PE32/PE32+ 的目标 OS 版本，发布时检查解包应用 EXE。
@@ -47,7 +49,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - PDF → PNG/JPG 使用 Poppler，并因多页输出 ZIP。
 - 图片或扫描 PDF → TXT 使用 Tesseract OCR。
 - 音频源不得暴露 MP4/WebM/MKV/MOV 等视频容器目标。
-- 音频仅支持普通格式（MP3/WAV/FLAC/AAC/OGG/OPUS/WMA），不支持任何音乐平台加密特殊格式（DRM 规避法律风险，公开版已移除解锁模块，见 docs/分发与合规规范.md）。
+- 音频支持普通格式（MP3/WAV/FLAC/AAC/OGG/OPUS/WMA）；非 Microsoft Store 桌面版额外接受 NCM/KGG/mflac/mgg/kgma/mmp4/KWM 输入，Microsoft Store 版隐藏并拒绝特殊音频转换。特殊输入不得暴露视频容器目标；AV3A NCM 仅支持 Windows。
 
 ## Security boundaries
 

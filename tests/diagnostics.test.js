@@ -34,6 +34,7 @@ test("diagnostics report contains bounded platform and engine facts without full
   assert.match(report, /App version: 0\.3\.4/);
   assert.match(report, /OS: win32 10\.0\.26100 x64/);
   assert.match(report, /Package: github-nsis/);
+  assert.match(report, /Desktop builds support ordinary audio formats and selected music-platform inputs/);
   assert.match(report, /libreoffice: disabled; errorCode=OFFICE_ENGINE_PROFILE_FAILED; executable=soffice\.com/);
   assert.match(report, /ffmpeg: enabled; version=7\.1; executable=ffmpeg\.exe/);
   assert.doesNotMatch(report, /Alice|Downloads|D:\\apps/);

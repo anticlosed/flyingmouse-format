@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
+const { Readable } = require("node:stream");
 const { after, before, test } = require("node:test");
 
 const runtimeDir = path.join(os.tmpdir(), `flyingmouse-text-integration-${process.pid}`);
@@ -11,8 +12,12 @@ process.env.FLYINGMOUSE_RUNTIME_DIR = runtimeDir;
 const candidateLo = "C:\\Users\\34615\\AppData\\Local\\Programs\\FlyingMouse Format\\resources\\libreoffice\\LibreOfficePortable\\App\\libreoffice\\program\\soffice.com";
 const LO_AVAILABLE = require("node:fs").existsSync(candidateLo);
 if (LO_AVAILABLE) process.env.FLYINGMOUSE_LIBREOFFICE_PATH = candidateLo;
-const { startServer, platformCapabilities } = require("../server");
-const { DCRAW_PATH, rawInput } = require("../config");
+const { startServer, createUploadStorage, platformCapabilities } = require("../server");
+const { DCRAW_PATH, audioInput, mediaAudioTargets, rawInput, unlockAudioInputs } = require("../config");
+const { MAX_SPECIAL_AUDIO_BYTES } = require("../audio-format-utils");
+const { categoryForExt, targetsForExt } = require("../utils");
+
+const SPECIAL_AUDIO_EXTENSIONS = ["ncm", "kgg", "mflac", "mgg", "kgma", "mmp4", "kwm"];
 
 let server;
 let baseUrl;
@@ -198,7 +203,8 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
   assert.deepEqual(capabilities.groups.document.experimentalInputs, ["wpd", "wps", "wpt"]);
   assert.deepEqual(capabilities.groups.spreadsheet.experimentalInputs, ["et", "ett"]);
   assert.deepEqual(capabilities.groups.presentation.experimentalInputs, ["dps", "dpt"]);
-  assert.deepEqual(capabilities.groups.audio.experimentalInputs, []);
+  assert.deepEqual(capabilities.groups.audio.experimentalInputs, ["kgg", "mflac", "kwm"]);
+  assert.deepEqual(capabilities.groups.audio.inputs, ["aac", "flac", "kgg", "kgma", "kwm", "m4a", "mflac", "mgg", "mmp4", "mp3", "ncm", "ogg", "opus", "wav", "wma"]);
   const serverSource = require("node:fs").readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   const imageSource = require("node:fs").readFileSync(path.join(__dirname, "..", "image.js"), "utf8");
   const pdfTableSource = require("node:fs").readFileSync(path.join(__dirname, "..", "pdf-table.js"), "utf8");
@@ -218,11 +224,124 @@ test("platform capabilities report os and arch only (no music-platform capabilit
   });
 });
 
+test("special audio formats are registered and expose audio targets outside Store mode", () => {
+  const hadWindowsStore = Object.prototype.hasOwnProperty.call(process, "windowsStore");
+  const previous = process.windowsStore;
+  process.windowsStore = false;
+  try {
+    for (const extension of SPECIAL_AUDIO_EXTENSIONS) {
+      assert.equal(audioInput.has(extension), true, `${extension} is missing from audioInput`);
+      assert.equal(unlockAudioInputs.has(extension), true, `${extension} is missing from unlockAudioInputs`);
+      assert.equal(categoryForExt(extension), "audio");
+      assert.deepEqual(targetsForExt(extension, { ffmpeg: true }), ["zip", ...mediaAudioTargets]);
+    }
+  } finally {
+    if (hadWindowsStore) process.windowsStore = previous;
+    else delete process.windowsStore;
+  }
+});
+
+test("createUploadStorage rejects oversized special audio once and removes the partial file", async () => {
+  assert.equal(MAX_SPECIAL_AUDIO_BYTES, 512 * 1024 * 1024);
+  const storage = createUploadStorage({ specialMaxBytes: 4, defaultMaxBytes: 16 });
+  const req = {};
+  const file = {
+    originalname: "oversized.ncm",
+    stream: Readable.from([Buffer.alloc(3, 0x11), Buffer.alloc(3, 0x22)])
+  };
+  let callbackCount = 0;
+  const result = await new Promise((resolve) => {
+    storage._handleFile(req, file, (error, info) => {
+      callbackCount += 1;
+      resolve({ error, info });
+    });
+  });
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(callbackCount, 1);
+  assert.equal(result.info, undefined);
+  assert.equal(result.error.name, "MulterError");
+  assert.equal(result.error.code, "LIMIT_FILE_SIZE");
+  assert.equal(result.error.errorCode, "AUDIO_FILE_TOO_LARGE");
+  assert.equal(result.error.limit, 4);
+  assert.equal(req.specialAudioInputExt, "ncm");
+  await assert.rejects(fs.access(file.path), (error) => error.code === "ENOENT");
+});
+
+test("truncated NCM input returns its format error instead of a Node range error", async () => {
+  const { response, body } = await convertResponse("truncated.ncm", Buffer.from("CTENFDAM"), "mp3", "application/octet-stream");
+  assert.equal(response.status, 422);
+  assert.equal(body.errorCode, "NCM_CONVERSION_FAILED");
+  assert.equal(body.sourceErrorCode, "NCM_SOURCE_FAILED");
+  assert.doesNotMatch(body.error, /ERR_OUT_OF_RANGE|offset/i);
+});
+
+test("special format errors are mapped before storage field validation", async () => {
+  const form = new FormData();
+  form.append("wrong", new Blob([Buffer.from("bad")]), "bad.ncm");
+  form.append("targetFormat", "mp3");
+  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  const body = await response.json();
+  assert.equal(response.status, 422);
+  assert.equal(body.errorCode, "NCM_CONVERSION_FAILED");
+  assert.equal(body.sourceErrorCode, "UNEXPECTED_FILE_FIELD");
+});
+
+test("ordinary upload field errors return a client status", async () => {
+  const form = new FormData();
+  form.append("wrong", new Blob([Buffer.from("bad")]), "bad.txt");
+  form.append("targetFormat", "md");
+  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  const body = await response.json();
+  assert.equal(response.status, 400);
+  assert.equal(body.errorCode, "UNEXPECTED_FILE_FIELD");
+  assert.equal(body.sourceErrorCode, "LIMIT_UNEXPECTED_FILE");
+});
+
+test("Store mode hides and rejects every special audio format", async () => {
+  const hadWindowsStore = Object.prototype.hasOwnProperty.call(process, "windowsStore");
+  const previous = process.windowsStore;
+  process.windowsStore = true;
+  try {
+    const capabilitiesResponse = await fetch(`${baseUrl}/api/capabilities`);
+    assert.equal(capabilitiesResponse.status, 200);
+    const capabilities = await capabilitiesResponse.json();
+    assert.deepEqual(capabilities.groups.audio.experimentalInputs, []);
+    assert.equal(capabilities.groups.audio.inputs.includes("mp3"), true);
+    for (const extension of SPECIAL_AUDIO_EXTENSIONS) {
+      assert.equal(capabilities.groups.audio.inputs.includes(extension), false);
+      assert.deepEqual(targetsForExt(extension, { ffmpeg: true }), ["zip"]);
+
+      const targetResponse = await fetch(`${baseUrl}/api/targets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ extension })
+      });
+      const targetBody = await targetResponse.json();
+      assert.equal(targetResponse.status, 200);
+      assert.deepEqual(targetBody.targets, ["zip"]);
+
+      const conversion = await convertResponse(
+        `sample.${extension}`,
+        Buffer.from("test"),
+        "mp3",
+        "application/octet-stream"
+      );
+      assert.equal(conversion.response.status, 400);
+      assert.equal(conversion.body.errorCode, `${extension.toUpperCase()}_CONVERSION_FAILED`);
+      assert.equal(conversion.body.sourceErrorCode, "AUDIO_UNLOCK_UNAVAILABLE_ON_STORE");
+    }
+    assert.ok(targetsForExt("mp3", { ffmpeg: true }).includes("wav"));
+  } finally {
+    if (hadWindowsStore) process.windowsStore = previous;
+    else delete process.windowsStore;
+  }
+});
+
 test("packaging and Win7 staging include the new runtime modules", () => {
   const packageJson = require("../package.json");
   const source = require("node:fs").readFileSync(path.join(__dirname, "..", "win7-build-profile.js"), "utf8");
   assert.ok(packageJson.build.files.includes("pdf-classifier.js"), "pdf-classifier.js is missing from build.files");
-  for (const file of ["resource-policy.js", "text-conversion.js", "pdf-table-extractor.js", "pdf-table-runtime.js", "config.js", "utils.js", "media.js", "zip-util.js", "image.js", "ocr.js", "pdfjs.js", "pdf-table.js", "pdf.js", "text-docx.js", "office-convert.js"]) {
+  for (const file of ["resource-policy.js", "text-conversion.js", "pdf-table-extractor.js", "pdf-table-runtime.js", "audio-format-utils.js", "ncm-format.js", "ncm-metadata.js", "av3a-format.js", "kgg-format.js", "mflac-format.js", "kgma-format.js", "kwm-format.js", "config.js", "utils.js", "media.js", "zip-util.js", "image.js", "ocr.js", "pdfjs.js", "pdf-table.js", "pdf.js", "text-docx.js", "office-convert.js"]) {
     assert.ok(packageJson.build.files.includes(file), `${file} is missing from build.files`);
     assert.match(source, new RegExp(`["]${file.replace(".", "\\.")}["]`));
   }

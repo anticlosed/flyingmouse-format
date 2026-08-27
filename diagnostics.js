@@ -94,7 +94,7 @@ function buildDiagnosticsReport(input = {}) {
     `OS: ${safeField(input.platform)} ${safeField(input.release)} ${safeField(input.arch)}`,
     `Package: ${safeField(input.packageType)}`,
     "License: Non-Commercial. Commercial resale or rebranding is prohibited.",
-    "Notice: This software supports only ordinary audio format conversion and does not support encrypted special formats from any music platform. Please support the artists.",
+    "Notice: Desktop builds support ordinary audio formats and selected music-platform inputs listed by the current capabilities. Microsoft Store builds do not provide special audio conversion. Please process only files you are authorized to use.",
     "",
     "Engines:",
     ...(engines.length ? engines.map(([name, details]) => engineLine(name, details)) : ["- unavailable"]),

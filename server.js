@@ -14,6 +14,7 @@ const ExcelJS = require("exceljs");
 const yazl = require("yazl");
 const yauzl = require("yauzl");
 const { PDFDocument } = require("pdf-lib");
+const { Transform, pipeline } = require("stream");
 
 const { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, jsonToCsv, csvToMarkdown, csvToHtmlTable } = require("./text-conversion");
 const { convertRasterImage } = require("./image-conversion");
@@ -30,6 +31,14 @@ const {
   assertPdfPages
 } = require("./resource-policy");
 const { buildPdfTableWorkbook, detectTableLinesFromRaw } = require("./pdf-table-runtime");
+const { convertNcm } = require("./ncm-format");
+const { buildNcmFfmpegOptions } = require("./ncm-metadata");
+const { prepareDecryptedAudio } = require("./av3a-format");
+const { convertKgg } = require("./kgg-format");
+const { convertMflac } = require("./mflac-format");
+const { convertKgma } = require("./kgma-format");
+const { convertKwm } = require("./kwm-format");
+const { MAX_SPECIAL_AUDIO_BYTES } = require("./audio-format-utils");
 const { convertOfdToPdf } = require("./ofd-convert");
 const { OfficeEngineError, probeLibreOffice, runLibreOffice } = require("./office-engine");
 const { inspectXlsxForCsv } = require("./office-quality");
@@ -168,6 +177,7 @@ const {
   pdfTextTargets,
   pdfImageTargets,
   audioInput,
+  unlockAudioInputs,
   videoInput,
   mediaAudioTargets,
   mediaVideoTargets,
@@ -179,6 +189,35 @@ const {
 } = require("./config");
 
 const app = express();
+const SPECIAL_AUDIO_ERROR_CODES = Object.freeze({
+  ncm: "NCM_CONVERSION_FAILED",
+  kgg: "KGG_CONVERSION_FAILED",
+  mflac: "MFLAC_CONVERSION_FAILED",
+  mgg: "MGG_CONVERSION_FAILED",
+  kgma: "KGMA_CONVERSION_FAILED",
+  mmp4: "MMP4_CONVERSION_FAILED",
+  kwm: "KWM_CONVERSION_FAILED"
+});
+const SPECIAL_AUDIO_SOURCE_ERROR_CODES = Object.freeze({
+  ncm: "NCM_SOURCE_FAILED",
+  kgg: "KGG_SOURCE_FAILED",
+  mflac: "MFLAC_SOURCE_FAILED",
+  mgg: "MGG_SOURCE_FAILED",
+  kgma: "KGMA_SOURCE_FAILED",
+  mmp4: "MMP4_SOURCE_FAILED",
+  kwm: "KWM_SOURCE_FAILED"
+});
+
+function conversionErrorCodes(inputExt, sourceErrorCode) {
+  if (!Object.prototype.hasOwnProperty.call(SPECIAL_AUDIO_ERROR_CODES, inputExt)) {
+    return { errorCode: sourceErrorCode };
+  }
+  const errorCode = SPECIAL_AUDIO_ERROR_CODES[inputExt];
+  return {
+    errorCode,
+    sourceErrorCode: sourceErrorCode || SPECIAL_AUDIO_SOURCE_ERROR_CODES[inputExt]
+  };
+}
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "script-src 'self'",
@@ -194,11 +233,177 @@ const CONTENT_SECURITY_POLICY = [
 ].join("; ");
 
 let cachedTesseract = null;
+let specialAudioActive = false;
+const specialAudioWaiters = [];
 
-const upload = multer({
-  dest: UPLOAD_DIR,
-  limits: { fileSize: MAX_UPLOAD_BYTES }
-});
+async function withSpecialAudioSlot(task) {
+  if (specialAudioActive) {
+    await new Promise((resolve) => specialAudioWaiters.push(resolve));
+  }
+  specialAudioActive = true;
+  try {
+    return await task();
+  } finally {
+    const next = specialAudioWaiters.shift();
+    if (next) next();
+    else specialAudioActive = false;
+  }
+}
+
+function createUploadStorage(options = {}) {
+  const specialMaxBytes = options.specialMaxBytes ?? MAX_SPECIAL_AUDIO_BYTES;
+  const defaultMaxBytes = options.defaultMaxBytes ?? MAX_UPLOAD_BYTES;
+  return {
+    _handleFile(_req, file, cb) {
+      const filename = randomUUID();
+      const finalPath = path.join(UPLOAD_DIR, filename);
+      const inputExt = normalizeExt(extFromName(file.originalname));
+      const isSpecialAudio = unlockAudioInputs.has(inputExt);
+      if (isSpecialAudio) _req.specialAudioInputExt = inputExt;
+      const managedByMulter = typeof _req?.on === "function";
+      const limit = isSpecialAudio ? specialMaxBytes : defaultMaxBytes;
+      let size = 0;
+      let limitError = null;
+      let sourceError = null;
+      let settled = false;
+      const limiter = new Transform({
+        transform(chunk, _encoding, callback) {
+          size += chunk.length;
+          if (size > limit) {
+            if (!limitError) {
+              limitError = new multer.MulterError("LIMIT_FILE_SIZE");
+              limitError.limit = limit;
+              limitError.errorCode = isSpecialAudio ? "AUDIO_FILE_TOO_LARGE" : "UPLOAD_FILE_TOO_LARGE";
+            }
+            callback();
+            return;
+          }
+          if (limitError) {
+            callback();
+            return;
+          }
+          callback(null, chunk);
+        }
+      });
+      const output = fs.createWriteStream(finalPath);
+      const finish = async (error, notifyStorage = true) => {
+        if (settled) return;
+        settled = true;
+        if (error) {
+          await fsp.rm(finalPath, { force: true }).catch(() => {});
+          if (notifyStorage) cb(error);
+          return;
+        }
+        cb(null, { destination: UPLOAD_DIR, filename, path: finalPath, size });
+      };
+      file.path = finalPath;
+      file.stream.once("error", (error) => {
+        sourceError = error;
+      });
+      file.stream.once("close", () => {
+        if (!file.stream.readableEnded && !sourceError) sourceError = new Error("上传流提前关闭。");
+      });
+      pipeline(file.stream, limiter, output, (error) => {
+        setImmediate(() => {
+          if (sourceError) {
+            void finish(error || sourceError || limitError || new Error("上传流提前关闭。"), !managedByMulter);
+            return;
+          }
+          void finish(error || limitError);
+        });
+      });
+    },
+    _removeFile(_req, file, cb) {
+      const filePath = file.path;
+      delete file.destination;
+      delete file.filename;
+      delete file.path;
+      if (filePath) {
+        fs.unlink(filePath, (error) => cb(error && error.code !== "ENOENT" ? error : null));
+      } else {
+        cb(null);
+      }
+    }
+  };
+}
+
+const uploadAny = multer({
+  storage: createUploadStorage(),
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+  fileFilter(req, file, cb) {
+    const inputExt = normalizeExt(extFromName(file.originalname));
+    if (unlockAudioInputs.has(inputExt)) req.specialAudioInputExt = inputExt;
+    if (req.uploadExpectedField && file.fieldname !== req.uploadExpectedField) {
+      const error = new multer.MulterError("LIMIT_UNEXPECTED_FILE", file.fieldname);
+      error.errorCode = "UNEXPECTED_FILE_FIELD";
+      cb(error);
+      return;
+    }
+    if (req.uploadExpectedMaxCount && (req.uploadAcceptedCount || 0) >= req.uploadExpectedMaxCount) {
+      const error = new multer.MulterError("LIMIT_UNEXPECTED_FILE", file.fieldname);
+      error.errorCode = "TOO_MANY_FILES";
+      cb(error);
+      return;
+    }
+    req.uploadAcceptedCount = (req.uploadAcceptedCount || 0) + 1;
+    cb(null, true);
+  }
+}).any();
+
+function uploadSingle(fieldName) {
+  return (req, res, next) => {
+    req.uploadExpectedField = fieldName;
+    req.uploadExpectedMaxCount = 1;
+    uploadAny(req, res, (error) => {
+      if (error) {
+        next(error);
+        return;
+      }
+      const files = req.files || [];
+      const accepted = files.filter((file) => file.fieldname === fieldName);
+      const unexpected = files.find((file) => file.fieldname !== fieldName);
+      if (unexpected || accepted.length > 1) {
+        const inputExt = normalizeExt(extFromName(unexpected?.originalname || accepted[0]?.originalname));
+        if (unlockAudioInputs.has(inputExt)) req.specialAudioInputExt = inputExt;
+        Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {}))).finally(() => {
+          const unexpectedError = new multer.MulterError("LIMIT_UNEXPECTED_FILE", unexpected?.fieldname || fieldName);
+          unexpectedError.errorCode = "UNEXPECTED_FILE_FIELD";
+          next(unexpectedError);
+        });
+        return;
+      }
+      req.file = accepted[0];
+      delete req.files;
+      next();
+    });
+  };
+}
+
+function uploadArray(fieldName) {
+  return (req, res, next) => {
+    req.uploadExpectedField = fieldName;
+    uploadAny(req, res, (error) => {
+      if (error) {
+        next(error);
+        return;
+      }
+      const files = req.files || [];
+      const unexpected = files.find((file) => file.fieldname !== fieldName);
+      if (unexpected) {
+        const inputExt = normalizeExt(extFromName(unexpected?.originalname));
+        if (unlockAudioInputs.has(inputExt)) req.specialAudioInputExt = inputExt;
+        Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {}))).finally(() => {
+          const unexpectedError = new multer.MulterError("LIMIT_UNEXPECTED_FILE", unexpected?.fieldname || fieldName);
+          unexpectedError.errorCode = "UNEXPECTED_FILE_FIELD";
+          next(unexpectedError);
+        });
+        return;
+      }
+      req.files = files;
+      next();
+    });
+  };
+}
 
 async function cleanupOldFiles() {
   const cutoff = Date.now() - 1000 * 60 * 60;
@@ -352,7 +557,11 @@ app.get("/api/capabilities", async (_req, res) => {
       spreadsheet: { inputs: [...spreadsheetInput].sort(), targets: spreadsheetTargets, experimentalInputs: experimentalInputsByCategory.spreadsheet },
       presentation: { inputs: [...presentationInput].sort(), targets: presentationTargets, experimentalInputs: experimentalInputsByCategory.presentation },
       pdf: { inputs: [...pdfInput].sort(), targets: [...pdfTextTargets, ...(tools.poppler ? [...pdfImageTargets, "pdf"] : [])] },
-      audio: { inputs: [...audioInput].sort(), targets: mediaAudioTargets, experimentalInputs: experimentalInputsByCategory.audio },
+      audio: {
+        inputs: [...audioInput].filter((ext) => !process.windowsStore || !unlockAudioInputs.has(ext)).sort(),
+        targets: mediaAudioTargets,
+        experimentalInputs: experimentalInputsByCategory.audio.filter((ext) => !process.windowsStore || !unlockAudioInputs.has(ext))
+      },
       video: { inputs: [...videoInput].sort(), targets: mediaTargets },
       any: { inputs: ["*"], targets: ["zip"] }
     },
@@ -371,7 +580,7 @@ app.post("/api/targets", async (req, res) => {
   res.json({ extension: ext, category: categoryForExt(ext), targets: targetsForExt(ext, tools), experimental: experimentalInputSet.has(ext) });
 });
 
-app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("files"), async (req, res) => {
+app.post("/api/convert-images-to-pdf", assertLocalWebRequest, uploadArray("files"), async (req, res) => {
   const files = req.files || [];
 
   try {
@@ -451,7 +660,7 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
   }
 });
 
-app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files"), async (req, res) => {
+app.post("/api/merge-pdfs", assertLocalWebRequest, uploadArray("files"), async (req, res) => {
   const files = req.files || [];
 
   try {
@@ -507,7 +716,7 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files"), async 
   }
 });
 
-app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (req, res) => {
+app.post("/api/convert", assertLocalWebRequest, uploadSingle("file"), async (req, res) => {
   const tools = await getTools();
   const file = req.file;
   const originalName = decodeUploadFileName(file?.originalname);
@@ -518,22 +727,29 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     return;
   }
 
+  const inputExt = normalizeExt(extFromName(originalName));
+  const category = categoryForExt(inputExt);
+
   if (!allTargets.has(requestedTarget)) {
     logger.warn(`Rejected convert request: unsupported target "${requestedTarget}" for "${originalName}"`);
     await fsp.rm(file.path, { force: true }).catch(() => {});
-    res.status(400).json({ error: "目标格式暂不支持。", errorCode: "UNSUPPORTED_TARGET" });
+    res.status(400).json({ error: "目标格式暂不支持。", ...conversionErrorCodes(inputExt, "UNSUPPORTED_TARGET") });
     return;
   }
 
-  const inputExt = normalizeExt(extFromName(originalName));
-  const category = categoryForExt(inputExt);
+  if (process.windowsStore && category === "audio" && unlockAudioInputs.has(inputExt) && requestedTarget !== "zip") {
+    await fsp.rm(file.path, { force: true }).catch(() => {});
+    res.status(400).json({ error: "商店版不支持加密音频解锁。", ...conversionErrorCodes(inputExt, "AUDIO_UNLOCK_UNAVAILABLE_ON_STORE") });
+    return;
+  }
+
   const allowedTargets = targetsForExt(inputExt, tools);
   logger.info(`Convert request: "${originalName}" (${inputExt}/${category}) -> ${requestedTarget} (${file.size} bytes)`);
 
   if (!allowedTargets.includes(requestedTarget)) {
     logger.warn(`Rejected convert request: ${category} file "${originalName}" cannot target ${requestedTarget}`);
     await fsp.rm(file.path, { force: true }).catch(() => {});
-    res.status(400).json({ error: "这个源文件暂时不能转换成所选格式。", errorCode: "TARGET_UNAVAILABLE_FOR_SOURCE" });
+    res.status(400).json({ error: "这个源文件暂时不能转换成所选格式。", ...conversionErrorCodes(inputExt, "TARGET_UNAVAILABLE_FOR_SOURCE") });
     return;
   }
 
@@ -601,12 +817,39 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
       }
     } else if (category === "audio" || category === "video") {
-      const videoCodec = ["h264", "h265", "av1"].includes(String(req.body?.videoCodec || ""))
-        ? String(req.body.videoCodec)
-        : "h264";
-      // 透明背景色：white / black / 十六进制色值（白名单在 alphaCompositeArgs 内校验）。
-      const alphaBackground = String(req.body?.alphaBackground || "").trim() || "white";
-      await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec, alphaBackground });
+      if (category === "audio" && unlockAudioInputs.has(inputExt)) {
+        if (process.windowsStore) {
+          logger.warn(`Rejected encrypted-audio unlock on Store build: ${originalName}`);
+          await fsp.rm(file.path, { force: true }).catch(() => {});
+          res.status(400).json({ error: "商店版不支持加密音频解锁。", ...conversionErrorCodes(inputExt, "AUDIO_UNLOCK_UNAVAILABLE_ON_STORE") });
+          return;
+        }
+        await withSpecialAudioSlot(async () => {
+          let decrypted;
+          if (inputExt === "ncm") decrypted = await convertNcm(file.path);
+          else if (inputExt === "kgg") decrypted = await convertKgg(file.path);
+          else if (inputExt === "kgma") decrypted = await convertKgma(file.path);
+          else if (inputExt === "kwm") decrypted = await convertKwm(file.path);
+          else decrypted = await convertMflac(file.path, { inputExtension: inputExt });
+          try {
+            const conversionInput = inputExt === "ncm"
+              ? await prepareDecryptedAudio(decrypted)
+              : decrypted.nativePath;
+            const mediaOptions = inputExt === "ncm"
+              ? buildNcmFfmpegOptions(decrypted, requestedTarget)
+              : {};
+            await convertMedia(conversionInput, outputPath, requestedTarget, "audio", mediaOptions);
+          } finally {
+            await fsp.rm(decrypted.tempDir, { recursive: true, force: true }).catch(() => {});
+          }
+        });
+      } else {
+        const videoCodec = ["h264", "h265", "av1"].includes(String(req.body?.videoCodec || ""))
+          ? String(req.body.videoCodec)
+          : "h264";
+        const alphaBackground = String(req.body?.alphaBackground || "").trim() || "white";
+        await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec, alphaBackground });
+      }
     } else {
       throw new Error("暂时无法识别这个文件类型。");
     }
@@ -648,14 +891,20 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     logger.info(`Convert succeeded: "${originalName}" -> ${downloadName} (${requestedTarget})`);
     res.json(payload);
   } catch (error) {
+    const originalErrorCode = error?.code || SPECIAL_AUDIO_SOURCE_ERROR_CODES[inputExt];
     const isClientConversionError = [
       "CSV_PARSE_FAILED",
+      "AV3A_UNSUPPORTED_PLATFORM",
       "PDF_TABLE_OCR_REQUIRED",
       "PDF_TABLE_OCR_EMPTY",
       "MEDIA_NO_AUDIO_TRACK",
       "PDF_OCR_REQUIRED",
       "XML_JSON_PARSE_FAILED",
       "YAML_JSON_PARSE_FAILED",
+      "MEDIA_OUTPUT_TOO_LARGE",
+      "MFLAC_DECRYPT_FAILED",
+      "MFLAC_EKEY_REQUIRED",
+      "MFLAC_EKEY_NETWORK",
       "PDF_ENCRYPT_UNAVAILABLE",
       "PDF_ENCRYPT_NO_PASSWORD",
       "PRESENTATION_HTML_EMPTY",
@@ -664,19 +913,23 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       "PDF_TABLE_OCR_LOW_QUALITY"
     ].includes(error?.code);
     const isResourceLimitError = error instanceof ResourceLimitError;
+    const isSpecialAudioError = category === "audio" && unlockAudioInputs.has(inputExt);
     const isOfficeEngineError = error instanceof OfficeEngineError;
-    if (isClientConversionError || isResourceLimitError) logger.warn(`Convert rejected: "${originalName}" -> ${requestedTarget}`, error);
+    if (isClientConversionError || isResourceLimitError || isSpecialAudioError) logger.warn(`Convert rejected: "${originalName}" -> ${requestedTarget}`, error);
     else logger.error(`Convert failed: "${originalName}" -> ${requestedTarget}`, error);
     await fsp.rm(file.path, { force: true }).catch(() => {});
     await fsp.rm(outputPath, { force: true }).catch(() => {});
     const payload = isResourceLimitError ? resourceErrorPayload(error) : { error: error.message || "转换失败。" };
     if (error?.code) payload.errorCode = error.code;
+    if (category === "audio" && unlockAudioInputs.has(inputExt)) {
+      Object.assign(payload, conversionErrorCodes(inputExt, originalErrorCode));
+    }
     if (error?.messages) payload.messages = error.messages;
     if (isOfficeEngineError) {
       payload.messages = error.messages;
       payload.details = error.details;
     }
-    res.status(isResourceLimitError ? 413 : (isClientConversionError ? 422 : 500)).json(payload);
+    res.status(isResourceLimitError ? 413 : (isClientConversionError || isSpecialAudioError ? 422 : 500)).json(payload);
   }
 });
 
@@ -746,10 +999,35 @@ app.get("/previews/:id", (req, res) => {
   });
 });
 
-app.use((error, _req, res, _next) => {
+app.use((error, req, res, _next) => {
   if (error?.code === "LIMIT_FILE_SIZE") {
-    logger.warn(`Rejected upload: file too large (max ${MAX_UPLOAD_BYTES} bytes)`);
-    res.status(413).json({ error: "文件太大，无法上传。请检查磁盘空间后重试。" });
+    logger.warn(`Rejected upload: file too large (max ${error.limit || MAX_UPLOAD_BYTES} bytes)`);
+    const sourceErrorCode = error.errorCode || "UPLOAD_FILE_TOO_LARGE";
+    res.status(413).json({
+      error: "文件太大，无法上传。请检查磁盘空间后重试。",
+      ...conversionErrorCodes(req.specialAudioInputExt, sourceErrorCode)
+    });
+    return;
+  }
+  if (req.specialAudioInputExt) {
+    if (!(error instanceof multer.MulterError) && !error?.errorCode) {
+      logger.error("Special audio upload failed", error);
+      res.status(500).json({ error: "文件上传失败，请稍后重试。", errorCode: "UPLOAD_FAILED" });
+      return;
+    }
+    logger.warn(`Rejected special audio upload: ${req.specialAudioInputExt}`, error);
+    res.status(422).json({
+      error: error.message || "加密音频上传失败。",
+      ...conversionErrorCodes(req.specialAudioInputExt, error?.errorCode || error?.code || "UPLOAD_FAILED")
+    });
+    return;
+  }
+  if (error instanceof multer.MulterError) {
+    res.status(400).json({
+      error: error.message || "上传参数无效。",
+      errorCode: error.errorCode || error.code,
+      sourceErrorCode: error.code
+    });
     return;
   }
   logger.error("Unhandled server error", error);
@@ -793,4 +1071,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, startServer, createPdfjsLoader, getToolDiagnostics, isMissingPdfjsEntry, loadPdfjsModule, platformCapabilities, assertPdfTableOcrQuality };
+module.exports = { app, startServer, createUploadStorage, createPdfjsLoader, getToolDiagnostics, isMissingPdfjsEntry, loadPdfjsModule, platformCapabilities, assertPdfTableOcrQuality };

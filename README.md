@@ -1,6 +1,6 @@
 # FlyingMouse Format / 飞鼠格式
 
-> A mouse-themed, offline Windows file converter. / 一款鼠鼠主题、可离线使用的 Windows 文件格式转换工具。
+> A mouse-themed, primarily local Windows file converter. / 一款鼠鼠主题、本地优先的 Windows 文件格式转换工具。
 
 > **作者 Author：牢蜂（LaoFeng）**
 >
@@ -20,9 +20,9 @@
 ### 主要功能
 
 - 鼠鼠原版界面：鼠鼠会跟随上传、识别、批量、OCR、转换成功或失败切换状态。
-- 本地离线转换：内置 FFmpeg、LibreOffice、Poppler、Tesseract 和 AVS3 解码器。
+- 本地优先转换：内置 FFmpeg、LibreOffice、Poppler、Tesseract 和 AVS3 解码器；部分 QQ 音乐 musicex 输入需要用户已有授权和在线密钥服务。
 - 支持图片、文本、Word/WPS、Excel/WPS、PPT/WPS、PDF、音频、视频和 ZIP。
-- 音频转换：支持 MP3 / WAV / FLAC / M4A / AAC / OGG / OPUS / WMA 等普通格式互转；**不支持其他音乐平台的加密特殊格式**（如 NCM / KGG / mflac / kgma / kwm 等）。
+- 音频转换：支持 MP3 / WAV / FLAC / M4A / AAC / OGG / OPUS / WMA 等普通格式互转；非 Microsoft Store 桌面版还支持 NCM / KGG / mflac / mgg / kgma / mmp4 / KWM 输入并转换为普通音频格式。KGG、mflac、KWM 标记为实验性，NCM 的 Audio Vivid（AV3A）音轨仅支持 Windows。
 - 视频编码选择：转视频时可选 H.264 / H.265 / AV1 编码（目标 mp4/mov/mkv 时显示）。
 - 操作记忆：按“源文件格式”分别记住上次选择的目标格式；重新修改后，新选择会成为该源格式的默认值。
 - 路径记忆：记住上次保存目录，下次保存时自动从该目录开始。
@@ -42,7 +42,7 @@
 - 相机 RAW 原片（CR2/CR3/NEF/ARW/DNG 等）可转换为 JPG/PNG/WebP/TIFF 等（内置 dcraw 解码，Windows 版，实验性）。
 - 资源保护：单图 50MP / 16384px、图片合并 PDF 总计 100MP、批量 2GB、PDF 不限页数（1:1 转换，长文档加载较慢）、OCR 不限页数。
 
-> **合规声明 Compliance Notice：本软件仅支持普通音频格式转换（MP3 / WAV / FLAC / AAC / OGG 等），不支持任何音乐平台的加密特殊格式。请支持正版音乐，尊重创作者。音频文件版权归原作者/唱片公司所有，本工具与各音乐平台无任何关联。本软件仅供个人免费使用，禁止商业售卖/转卖/套壳换皮重新发布。**
+> **使用声明 Usage Notice：非 Microsoft Store 桌面版支持普通音频格式及 NCM / KGG / mflac / mgg / kgma / mmp4 / KWM 输入转换；Microsoft Store 版不提供特殊音频转换能力。请仅处理拥有合法使用权的文件，支持正版音乐并尊重创作者。本工具与各音乐平台无任何关联。本软件仅供个人免费使用，禁止商业售卖/转卖/套壳换皮重新发布。**
 
 ### 快速开始
 
@@ -109,9 +109,9 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 ### Highlights
 
 - Original mouse UI with animated state changes for upload, detection, batch work, OCR, success, and errors.
-- Fully local conversion with bundled FFmpeg, LibreOffice, Poppler, Tesseract, and an AVS3 decoder.
+- Primarily local conversion with bundled FFmpeg, LibreOffice, Poppler, Tesseract, and an AVS3 decoder. Some QQ Music musicex inputs require existing authorization and online key exchange.
 - Converts images, text, Word/WPS, Excel/WPS, PPT/WPS, PDF, audio, video, and ZIP files.
-- Audio conversion between ordinary formats: MP3 / WAV / FLAC / M4A / AAC / OGG / OPUS / WMA. **Encrypted special formats from music platforms (NCM / KGG / mflac / kgma / kwm etc.) are NOT supported.**
+- Audio conversion between ordinary formats: MP3 / WAV / FLAC / M4A / AAC / OGG / OPUS / WMA. Non-Microsoft-Store desktop builds also accept NCM / KGG / mflac / mgg / kgma / mmp4 / KWM as inputs and convert them to ordinary audio formats. KGG, mflac, and KWM are experimental; Audio Vivid (AV3A) NCM tracks require Windows.
 - Video codec selection: H.264 / H.265 / AV1 for video conversion (shown when targeting mp4/mov/mkv).
 - Remembers the chosen target separately for each source extension. Changing it replaces that extension's default.
 - Remembers the last save directory for the next save dialog.
@@ -131,7 +131,7 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 - Camera RAW files (CR2/CR3/NEF/ARW/DNG, etc.) convert to JPG/PNG/WebP/TIFF and more (built-in dcraw decoding, Windows build, experimental).
 - Resource safeguards: 50 MP / 16384 px per image, 100 MP image-to-PDF decode budget, 2 GB batches, 500 PDF pages, and 100 OCR pages.
 
-> **Compliance Notice: this software supports only ordinary audio format conversion (MP3 / WAV / FLAC / AAC / OGG etc.) and does NOT support encrypted special formats from any music platform. Please support the artists and respect copyright. Audio file copyrights belong to the respective artists/labels; this tool is not affiliated with any music platform. The software is free for personal use only; commercial resale or repackaging is prohibited.**
+> **Usage Notice: non-Microsoft-Store desktop builds support ordinary audio formats and accept NCM / KGG / mflac / mgg / kgma / mmp4 / KWM inputs; Microsoft Store builds do not provide special audio conversion. Process only files you are authorized to use. Please support the artists and respect copyright. This tool is not affiliated with any music platform. The software is free for personal use only; commercial resale or repackaging is prohibited.**
 
 ### Quick start
 
@@ -190,14 +190,14 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 | Excel/WPS | xls, xlsx, xlsm, ods, csv, tsv, et, ett | pdf, xlsx, xls, ods, csv, html |
 | PPT/WPS | ppt, pptx, odp, dps, dpt | pdf, pptx, odp, html, png, jpg (逐页转图 zip) |
 | PDF | pdf | xlsx, docx, txt, html, png, jpg, split/解密 PDF |
-| Audio / 音频 | mp3, wav, flac, m4a, aac, ogg, opus, wma | mp3, wav, flac, m4a, ogg, aac, opus, wma |
+| Audio / 音频 | ncm, kgg, mflac, mgg, kgma, mmp4, kwm, mp3, wav, flac, m4a, aac, ogg, opus, wma | mp3, wav, flac, m4a, ogg, aac, opus, wma |
 | Video / 视频 | mp4, mov, mkv, webm, avi, m4v, wmv, flv | mp4, webm, mkv, mov, gif, mp3, wav, flac, m4a, ogg, aac, opus, wma |
 | ZIP / 压缩包 | zip | pdf (图片合并) |
 | Any file / 任意文件 | any | zip |
 
 ## Privacy and security / 隐私与安全
 
-- Files are processed locally and are not uploaded to a cloud conversion service. / 文件在本地处理，不上传到云端转换服务。
+- Files are processed locally and are not uploaded to a cloud conversion service; some QQ Music musicex conversions may exchange metadata and a key request with the official QQ Music endpoint. / 文件在本地处理，不上传到云端转换服务；部分 QQ 音乐 musicex 转换可能向官方 QQ 音乐接口交换元数据并请求密钥。
 - Electron uses context isolation, sandboxing, restricted navigation, and a local-only random port. / Electron 使用上下文隔离、沙箱、导航限制和仅本机可访问的随机端口。
 - The Windows installer is currently unsigned, so SmartScreen may show a warning. / 当前 Windows 安装包尚未签名，SmartScreen 可能显示提示。
 - [Privacy policy / 隐私政策](docs/privacy-policy.html)

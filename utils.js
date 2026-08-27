@@ -27,6 +27,7 @@ const {
   pdfTextTargets,
   pdfImageTargets,
   audioInput,
+  unlockAudioInputs,
   videoInput,
   mediaAudioTargets,
   mediaVideoTargets,
@@ -128,7 +129,12 @@ function categoryForExt(rawExt) {
 
 function targetsForExt(rawExt, tools) {
   const category = categoryForExt(rawExt);
+  const normalizedInput = normalizeExt(rawExt);
   const targets = new Set(["zip"]);
+
+  if (category === "audio" && process.windowsStore && unlockAudioInputs.has(normalizedInput)) {
+    return [...targets];
+  }
 
   if (category === "image") {
     imageFormatTargets.forEach((target) => targets.add(target));
@@ -205,7 +211,6 @@ function targetsForExt(rawExt, tools) {
   }
 
   return [...targets].filter((target) => {
-    const normalizedInput = normalizeExt(rawExt);
     if (category === "pdf" && target === "pdf") return true;
     if (category === "image" && ["gif", "webp"].includes(normalizedInput) && target === "tiff") return false;
     return target !== normalizedInput || target === "zip";

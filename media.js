@@ -3,6 +3,8 @@
 
 const { FFMPEG_PATH } = require("./config");
 const { run } = require("./utils");
+const fsp = require("fs/promises");
+const { MAX_SPECIAL_AUDIO_BYTES } = require("./audio-format-utils");
 
 async function probeAudioTrack(inputPath) {
   try {
@@ -128,8 +130,21 @@ async function convertMedia(inputPath, outputPath, target, category, options = {
   }
   args.push(...(options.coverArgs || []));
 
+  const maxOutputBytes = options.maxOutputBytes || MAX_SPECIAL_AUDIO_BYTES;
+  args.push("-fs", String(maxOutputBytes));
   args.push(outputPath);
   await run(FFMPEG_PATH, args, { timeout: 1000 * 60 * 30 });
+  const outputStat = await fsp.stat(outputPath).catch(() => null);
+  if (outputStat && outputStat.size >= maxOutputBytes) {
+    const limitMb = Math.floor(maxOutputBytes / (1024 * 1024));
+    const error = new Error(`媒体转换输出超过 ${limitMb} MB 限制。`);
+    error.code = "MEDIA_OUTPUT_TOO_LARGE";
+    error.messages = {
+      zhCN: `媒体转换输出超过 ${limitMb} MB 限制。`,
+      enUS: `The converted media exceeds the ${limitMb} MB output limit.`
+    };
+    throw error;
+  }
 }
 
 module.exports = {
