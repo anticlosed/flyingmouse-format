@@ -143,10 +143,14 @@ jobs:
           set -euo pipefail
           brew install zstd
           key="darwin-${{ matrix.arch }}"
+          # 引擎 release 托管在清单声明的仓库（LaoFeng-mouse），不是当前仓库——
+          # 与 restore-ci-engines.ps1 一致从清单读取，避免镜像仓库 release not found。
+          repo="$(node -p "require('./ci-engines-v1.json').repository")"
+          tag="$(node -p "require('./ci-engines-v1.json').releaseTag")"
           asset="$(node -p "require('./ci-engines-v1.json').assets['$key'].assetName")"
           root="$PWD/bin/engines/$key"
           mkdir -p output "$root"
-          gh release download ci-engines-v1 --repo "${{ github.repository }}" --pattern "$asset" --dir output
+          gh release download "$tag" --repo "$repo" --pattern "$asset" --dir output
           zstd -dc "output/$asset" | tar -xf - -C "$root"
           node scripts/validate-ci-engines.js --platform darwin --arch "${{ matrix.arch }}" --root "$root" --bundle "output/$asset"
           file "$root/runtime/bin/ffmpeg" "$root/runtime/bin/pdftoppm" "$root/libreoffice/LibreOffice.app/Contents/MacOS/soffice"
