@@ -12,63 +12,95 @@ const { run, commandExists } = require("./utils");
 const { inspectImageMetadata } = require("./image");
 const { ocrAvailable, createOcrWorker } = require("./ocr");
 const { loadPdfjs } = require("./pdfjs");
+const { imageCoverageFromOperators } = require("./pdf-classifier");
 const { LIMITS, assertPdfPages } = require("./resource-policy");
 const { buildPdfTableWorkbook, detectTableLinesFromRaw } = require("./pdf-table-runtime");
+const { reportConversionProgress } = require("./conversion-progress");
 
-function groupPdfItemsIntoRows(items) {
-  const cleanItems = items
-    .filter((item) => String(item.str || "").trim())
-    .map((item) => ({
-      text: String(item.str).trim(),
-      x: item.transform[4],
-      y: item.transform[5],
-      width: item.width || 0
-    }))
-    .sort((a, b) => b.y - a.y || a.x - b.x);
+function groupPdfItemsIntoLines(items, viewport) {
+  // Use the displayed page coordinate system, including /Rotate and CropBox.
+  // Raw PDF y coordinates reverse both line order and glyph order on rotated pages.
+  const v = viewport?.transform || [1, 0, 0, -1, 0, 0];
+  const scale = Math.hypot(v[0], v[1]) || 1;
+  const cleanItems = items.flatMap((item) => {
+    const text = String(item?.str || "").trim();
+    const t = item?.transform;
+    if (!text || !Array.isArray(t) || t.length < 6 || !t.every(Number.isFinite)) return [];
+    const x = v[0] * t[4] + v[2] * t[5] + v[4];
+    const y = v[1] * t[4] + v[3] * t[5] + v[5];
+    const dx = v[0] * t[0] + v[2] * t[1];
+    const dy = v[1] * t[0] + v[3] * t[1];
+    const baselineLength = Math.hypot(dx, dy) || 1;
+    const width = Math.max(0, Number(item.width) || 0) * scale;
+    const height = Math.max(1, Number(item.height) || Math.hypot(t[2], t[3])) * scale;
+    const endX = x + dx / baselineLength * width;
+    const endY = y + dy / baselineLength * width;
+    return [{ text, x: Math.min(x, endX), y, end: Math.max(x, endX), height,
+      bbox: [Math.min(x, endX), Math.min(y, endY) - height, Math.max(x, endX), Math.max(y, endY)],
+      fontName: item.fontName, dir: item.dir }];
+  }).sort((a, b) => a.y - b.y || a.x - b.x);
 
-  const rowBuckets = [];
+  const lines = [];
   for (const item of cleanItems) {
-    let row = rowBuckets.find((bucket) => Math.abs(bucket.y - item.y) <= 3);
-    if (!row) {
-      row = { y: item.y, items: [] };
-      rowBuckets.push(row);
+    const previous = lines.at(-1);
+    const tolerance = Math.max(2, Math.min(item.height, previous?.height || item.height) * 0.28);
+    if (previous && Math.abs(previous.y - item.y) <= tolerance) {
+      previous.items.push(item);
+      previous.height = Math.max(previous.height, item.height);
+    } else {
+      lines.push({ y: item.y, height: item.height, items: [item] });
     }
-    row.items.push(item);
-    row.y = (row.y * (row.items.length - 1) + item.y) / row.items.length;
   }
 
-  const anchors = [];
-  for (const item of cleanItems) {
-    let anchor = anchors.find((candidate) => Math.abs(candidate.x - item.x) <= 10);
-    if (!anchor) {
-      anchor = { x: item.x, count: 0 };
-      anchors.push(anchor);
-    }
-    anchor.x = (anchor.x * anchor.count + item.x) / (anchor.count + 1);
-    anchor.count += 1;
+  function appendText(left, item, gap, previous) {
+    if (!left) return item.text;
+    const cjk = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]$/u.test(left)
+      && /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(item.text);
+    const adjacentGlyphs = previous.text.length === 1 && item.text.length === 1
+      && gap <= Math.max(previous.height, item.height) * 0.85;
+    return left + ((cjk || adjacentGlyphs || gap <= item.height * 0.12) ? "" : " ") + item.text;
   }
-  anchors.sort((a, b) => a.x - b.x);
 
-  return rowBuckets
-    .sort((a, b) => b.y - a.y)
-    .map((row) => {
-      const cells = Array.from({ length: Math.max(anchors.length, 1) }, () => "");
-      for (const item of row.items.sort((a, b) => a.x - b.x)) {
-        let bestIndex = 0;
-        let bestDistance = Number.POSITIVE_INFINITY;
-        anchors.forEach((anchor, index) => {
-          const distance = Math.abs(anchor.x - item.x);
-          if (distance < bestDistance) {
-            bestDistance = distance;
-            bestIndex = index;
-          }
-        });
-        cells[bestIndex] = cells[bestIndex] ? `${cells[bestIndex]} ${item.text}` : item.text;
+  for (const line of lines) {
+    line.items.sort((a, b) => a.x - b.x);
+    const fragments = [];
+    let previous;
+    let text = "";
+    for (const item of line.items) {
+      const gap = previous ? item.x - previous.end : 0;
+      text = appendText(text, item, gap, previous);
+      if (!fragments.length || gap > Math.max(14, line.height * 1.6)) {
+        fragments.push({ x: item.x, text: item.text });
+      } else {
+        const fragment = fragments.at(-1);
+        fragment.text = appendText(fragment.text, item, gap, previous);
       }
-      while (cells.length && !cells[cells.length - 1]) cells.pop();
-      return cells;
-    })
-    .filter((row) => row.length);
+      previous = item;
+    }
+    line.text = text;
+    line.fragments = fragments;
+    line.bbox = [Math.min(...line.items.map((item) => item.bbox[0])),
+      Math.min(...line.items.map((item) => item.bbox[1])),
+      Math.max(...line.items.map((item) => item.bbox[2])),
+      Math.max(...line.items.map((item) => item.bbox[3]))];
+  }
+  // A single line of positioned words is prose. Require repeated, nearby column
+  // boundaries before making editable table cells; complex tables use the separate engine.
+  const aligned = (a, b) => a && b && a.fragments.length > 1
+    && a.fragments.length === b.fragments.length
+    && Math.abs(a.y - b.y) <= Math.max(a.height, b.height) * 3.5
+    && a.fragments.every((fragment, index) => Math.abs(fragment.x - b.fragments[index].x) <= 10)
+    && a.fragments.every((fragment) => fragment.text.length < 80)
+    && b.fragments.every((fragment) => fragment.text.length < 80);
+  lines.forEach((line, index) => {
+    line.cells = aligned(line, lines[index - 1]) || aligned(line, lines[index + 1])
+      ? line.fragments.map((fragment) => fragment.text) : [line.text];
+  });
+  return lines;
+}
+
+function groupPdfItemsIntoRows(items, viewport) {
+  return groupPdfItemsIntoLines(items, viewport).map((line) => line.cells);
 }
 
 async function extractPdfRowsByPage(inputPath) {
@@ -80,20 +112,27 @@ async function extractPdfRowsByPage(inputPath) {
     useSystemFonts: true,
     isEvalSupported: false
   });
-  const pdf = await loadingTask.promise;
-  assertPdfPages(pdf.numPages);
   const pages = [];
-
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const content = await page.getTextContent();
-    pages.push({
-      name: `Page ${pageNumber}`,
-      rows: groupPdfItemsIntoRows(content.items)
-    });
+  try {
+    const pdf = await loadingTask.promise;
+    assertPdfPages(pdf.numPages);
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      try {
+        const viewport = page.getViewport({ scale: 1, rotation: page.rotate || 0 });
+        const [content, operators] = await Promise.all([page.getTextContent(), page.getOperatorList()]);
+        const lines = groupPdfItemsIntoLines(content.items, viewport);
+        pages.push({ name: `Page ${pageNumber}`, pageNumber, width: viewport.width,
+          height: viewport.height, lines, rows: lines.map((line) => line.cells),
+          imageCoverage: imageCoverageFromOperators(operators, pdfjsLib.OPS, viewport),
+          blank: !lines.length && operators.fnArray.length === 0 });
+      } finally {
+        page.cleanup();
+      }
+    }
+  } finally {
+    await loadingTask.destroy();
   }
-
-  await loadingTask.destroy();
   return pages;
 }
 
@@ -204,6 +243,7 @@ function camelotTablesToModel(tables) {
     });
     sheets.push({
       name: `P${String(table.page).padStart(3, "0")}-T${String(index + 1).padStart(2, "0")}`,
+      pages: [Number(table.page)],
       rows: Array.isArray(table.cells) ? table.cells : [],
       merges: [],
       cellConfidence: undefined
@@ -232,15 +272,7 @@ function camelotTablesQualityOk(tables) {
   return avgAccuracy >= 60 && fillRatio >= 0.5;
 }
 
-async function extractComplexPdfTableModel(inputPath) {
-  // 优先用文档引擎（docengine table = camelot）提取表格；引擎缺失、无结果或质量差时回退到 PDF.js 自研提取。
-  if (DOCENGINE_PATH) {
-    const tables = await extractTablesViaDocengine(inputPath);
-    if (camelotTablesQualityOk(tables)) {
-      return camelotTablesToModel(tables);
-    }
-  }
-
+async function extractComplexPdfTableModel(inputPath, options = {}) {
   const pdfjsLib = await loadPdfjs();
   const data = new Uint8Array(await fsp.readFile(inputPath));
   const loadingTask = pdfjsLib.getDocument({
@@ -249,49 +281,78 @@ async function extractComplexPdfTableModel(inputPath) {
     useSystemFonts: true,
     isEvalSupported: false
   });
-  const pdf = await loadingTask.promise;
-  assertPdfPages(pdf.numPages);
-  const canRender = await commandExists(PDFTOPPM_PATH, ["-v"]);
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-table-"));
+  let tempDir;
   const rendered = new Map();
   let worker = null;
   let ocrBudgetChecked = false;
-
-  const ensureRendered = async (pageNumber) => {
-    if (!canRender) return null;
-    if (!rendered.has(pageNumber)) rendered.set(pageNumber, renderPdfTablePage(inputPath, pageNumber, tempDir));
-    return rendered.get(pageNumber);
-  };
-
   try {
+    const pdf = await loadingTask.promise;
+    assertPdfPages(pdf.numPages);
+    // An accurate result on one native page says nothing about omitted pages.
+    // Keep accepted native tables, but independently extract every other page.
+    const byPage = new Map();
+    if (options.extractTablesViaDocengine || DOCENGINE_PATH) {
+      const tables = await (options.extractTablesViaDocengine || extractTablesViaDocengine)(inputPath);
+      for (const table of tables) {
+        const pageNumber = Number(table.page);
+        if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > pdf.numPages) continue;
+        if (options.classification?.pages?.some(page => page.pageNumber === pageNumber && page.kind === "scanned")) continue;
+        if (!byPage.has(pageNumber)) byPage.set(pageNumber, []);
+        byPage.get(pageNumber).push({ ...table, page: pageNumber });
+      }
+    }
+    for (const [pageNumber, tables] of byPage) {
+      if (!camelotTablesQualityOk(tables)) byPage.delete(pageNumber);
+    }
+    const nativeModel = camelotTablesToModel([...byPage.values()].flat().sort((a, b) => a.page - b.page));
+    let completedPages = byPage.size;
+    reportConversionProgress({ stage: "converting", completed: completedPages, total: pdf.numPages, unit: "pages" });
+    if (byPage.size === pdf.numPages) return nativeModel;
+
+    const canRender = Boolean(options.renderPage) || await commandExists(PDFTOPPM_PATH, ["-v"]);
+    tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-table-"));
+    const ensureRendered = async (pageNumber) => {
+      if (!canRender) return null;
+      if (!rendered.has(pageNumber)) rendered.set(pageNumber, renderPdfTablePage(inputPath, pageNumber, tempDir));
+      return rendered.get(pageNumber);
+    };
     async function* pages() {
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+        if (byPage.has(pageNumber)) continue;
         const page = await pdf.getPage(pageNumber);
         try {
           const viewport = page.getViewport({ scale: 200 / 72, rotation: page.rotate || 0 });
+          const textContent = await page.getTextContent();
+          const hasText = textContent.items.some(item => String(item.str || "").trim());
+          const blank = !hasText && (await page.getOperatorList()).fnArray.length === 0;
           yield {
             pageNumber,
             width: viewport.width,
             height: viewport.height,
             viewport,
-            textContent: await page.getTextContent()
+            textContent,
+            blank
           };
+          // The async iterator resumes only after the consumer has finished
+          // this page's native/OCR table extraction, including retries.
+          reportConversionProgress({ stage: "converting", completed: ++completedPages, total: pdf.numPages, unit: "pages" });
         } finally {
           page.cleanup();
         }
       }
     }
 
-    return await buildPdfTableWorkbook(pages(), {
-      renderPage: canRender ? async (page) => {
+    const fallbackModel = await buildPdfTableWorkbook(pages(), {
+      renderPage: options.renderPage || (canRender ? async (page) => {
         const image = await ensureRendered(page.pageNumber);
         const { data: raw, info } = await sharp(image.outputPath, { limitInputPixels: LIMITS.maxImagePixels })
           .grayscale()
           .raw()
           .toBuffer({ resolveWithObject: true });
         return { data: raw, width: info.width, height: info.height, channels: info.channels };
-      } : null,
-      ocrPage: canRender && ocrAvailable() ? async (page) => {
+      } : null),
+      ocrPage: options.ocrPage || (canRender && ocrAvailable() ? async (page) => {
+        reportConversionProgress({ stage: "recognizing", completed: completedPages, total: pdf.numPages, unit: "pages" });
         if (!ocrBudgetChecked) {
           assertPdfPages(pdf.numPages, { ocr: true });
           ocrBudgetChecked = true;
@@ -302,12 +363,17 @@ async function extractComplexPdfTableModel(inputPath) {
         }
         const image = await ensureRendered(page.pageNumber);
         return recognizePdfTablePage(worker, image.outputPath, tempDir, page.pageNumber);
-      } : null
+      } : null)
     });
+    return {
+      sheets: [...nativeModel.sheets, ...fallbackModel.sheets].sort((a, b) => a.pages[0] - b.pages[0]),
+      summary: [...nativeModel.summary, ...fallbackModel.summary].sort((a, b) => a.pageNumber - b.pageNumber),
+      warnings: [...nativeModel.warnings, ...fallbackModel.warnings]
+    };
   } finally {
     if (worker) await worker.terminate().catch(() => {});
     await loadingTask.destroy().catch(() => {});
-    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    if (tempDir) await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -355,6 +421,7 @@ async function writePdfTableWorkbook(model, outputPath) {
 }
 
 module.exports = {
+  groupPdfItemsIntoLines,
   groupPdfItemsIntoRows,
   extractPdfRowsByPage,
   sheetName,

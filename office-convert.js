@@ -12,6 +12,7 @@ const { RUNTIME_DIR, LIBREOFFICE_PATH } = require("./config");
 const { normalizeExt, extFromName, outputNameFor } = require("./utils");
 const { createTurndownService } = require("./text-conversion");
 const { OfficeEngineError, runLibreOffice } = require("./office-engine");
+const { waitForOfficeReady } = require("./office-readiness");
 // 注意：htmlToText 从 text-docx.js 延迟 require（convertDocumentToText 内），
 // 避免与 text-docx.js 顶层 require 本模块形成循环依赖。
 const sanitize = require("sanitize-filename");
@@ -107,6 +108,7 @@ async function docxNeedsPdfRepair(docxPath) {
 }
 
 async function repairDocxViaRoundtrip(inputPath, originalName, tempDir) {
+  await waitForOfficeReady();
   const repairDir = path.join(tempDir, "repair");
   await fsp.mkdir(repairDir, { recursive: true });
   const args = [
@@ -217,6 +219,7 @@ async function findConvertedFile(outDir, target) {
 }
 
 async function convertWithLibreOffice(inputPath, outputPath, originalName, target) {
+  await waitForOfficeReady();
   const tempDir = path.join(RUNTIME_DIR, `lo-${randomUUID()}`);
   const outDir = path.join(tempDir, "out");
   await fsp.mkdir(outDir, { recursive: true });
@@ -267,13 +270,12 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
   let html;
   // WPS/Word 自动编号前缀（docx 分支填充，见 computeDocxHeadingNumbers）
   let headingPrefixes = [];
-  // 图片外置目录：md 同目录的 `<下载名>.assets/`，md 里用相对路径引用，
+  // 图片外置目录按唯一 outputPath 隔离，避免同名文档覆盖早先转换的图片。
+  // md 内仍用 `<下载名>.assets/` 相对引用，保存时按附件清单改写。
   // 避免 mammoth 把 docx 图片 base64 内嵌成超长单行导致 Typora 拒渲染
   // （实测 37 张图单行 263KB → doEnterOversize）。
-  // 注意：目录名必须基于 downloadName（outputNameFor(originalName, "md")）
-  // 而不是 outputPath（带时间戳-uuid 前缀），否则用户保存后相对引用断裂。
   const mdBasename = path.basename(outputNameFor(originalName, "md"), ".md") || "document";
-  const assetsDir = path.join(path.dirname(outputPath), `${mdBasename}.assets`);
+  const assetsDir = `${outputPath}.assets`;
 
   if (ext === "docx") {
     // 注意：mammoth 1.12.0 的 convertImage 选项实测失效（回调从不被调用，

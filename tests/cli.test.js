@@ -10,20 +10,31 @@ const {
   sanitizeJsonError
 } = require("../cli");
 
+test("CLI accepts leading help flags with successful output and no conversion service", () => {
+  for (const args of [[], ["--help"], ["-h"], ["convert", "--help"]]) {
+    const result = spawnSync(process.execPath, [path.join(__dirname, "..", "cli.js"), ...args], {
+      encoding: "utf8", timeout: 10000
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^FlyingMouse Format CLI/);
+    assert.doesNotMatch(result.stderr, /requires at least|Unknown command|Server started/);
+  }
+});
+
 test("CLI parses conversion, merge, JSON, and engine options", () => {
   const parsed = parseCliArgs([
     "convert", "一.txt", "二.txt", "--to", "md", "--output-dir", "out",
-    "--compression-level", "9", "--video-codec", "h265", "--pdf-action", "decrypt",
-    "--password", "secret", "--json"
+    "--video-codec", "h265", "--pdf-action", "decrypt",
+    "--password", "secret", "--text-encoding", "gb18030", "--json"
   ]);
   assert.equal(parsed.command, "convert");
   assert.deepEqual(parsed.files, ["一.txt", "二.txt"]);
   assert.equal(parsed.options.to, "md");
   assert.equal(parsed.options.outputDir, "out");
-  assert.equal(parsed.options.compressionLevel, "9");
   assert.equal(parsed.options.videoCodec, "h265");
   assert.equal(parsed.options.pdfAction, "decrypt");
   assert.equal(parsed.options.password, "secret");
+  assert.equal(parsed.options.textEncoding, "gb18030");
   assert.equal(parsed.options.json, true);
 });
 

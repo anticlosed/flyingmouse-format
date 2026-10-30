@@ -1,6 +1,6 @@
 {
   "name": "flyingmouse-format",
-  "version": "0.6.5",
+  "version": "0.7.10",
   "private": true,
   "author": "FlyingMouse Format",
   "productName": "FlyingMouse Format",
@@ -21,23 +21,29 @@
     "dist:mac:arm64": "node scripts/validate-ci-engines.js --platform darwin --arch arm64 --root bin/engines/darwin-arm64 && electron-builder --mac dmg --arm64 --publish never",
     "dist:mac:x64": "node scripts/validate-ci-engines.js --platform darwin --arch x64 --root bin/engines/darwin-x64 && electron-builder --mac dmg --x64 --publish never",
     "dist:win7": "node scripts/build-win7.js",
-    "test": "node --test tests/agent-skill-installer.test.js tests/av3a-format.test.js tests/bmp-input.test.js tests/ci-engine-release.test.js tests/cli.test.js tests/conversion-preferences.test.js tests/conversion.test.js tests/diagnostics.test.js tests/ebook.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/i18n.test.js tests/ico-format.test.js tests/image-conversion.test.js tests/kgma-format.test.js tests/kwm-format.test.js tests/logger.test.js tests/macos-packaging.test.js tests/media-codec.test.js tests/mflac-format.test.js tests/mouse-assets.test.js tests/ncm-metadata.test.js tests/ocr-merge.test.js tests/ofd-convert.test.js tests/office-crc-repair.test.js tests/office-engine.test.js tests/office-quality.test.js tests/office-wps-repair.test.js tests/pdf-classifier.test.js tests/pdf-scanned-routing.test.js tests/pdf-structure-contract.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/pdf2docx.test.js tests/pe-metadata.test.js tests/preview.test.js tests/raw-input.test.js tests/resource-policy.test.js tests/runtime-paths.test.js tests/settings-store.test.js tests/text-conversion-integration.test.js tests/text-conversion.test.js tests/tga-input.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/xml-json.test.js tests/zip-util.test.js",
-    "test:ci": "node --test tests/agent-skill-installer.test.js tests/av3a-format.test.js tests/bmp-input.test.js tests/ci-engine-release.test.js tests/cli.test.js tests/conversion-preferences.test.js tests/conversion.test.js tests/diagnostics.test.js tests/ebook.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/i18n.test.js tests/ico-format.test.js tests/image-conversion.test.js tests/kgma-format.test.js tests/kwm-format.test.js tests/logger.test.js tests/macos-packaging.test.js tests/media-codec.test.js tests/mflac-format.test.js tests/mouse-assets.test.js tests/ncm-metadata.test.js tests/ocr-merge.test.js tests/ofd-convert.test.js tests/office-crc-repair.test.js tests/office-engine.test.js tests/office-quality.test.js tests/office-wps-repair.test.js tests/pdf-classifier.test.js tests/pdf-scanned-routing.test.js tests/pdf-structure-contract.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/pdf2docx.test.js tests/pe-metadata.test.js tests/preview.test.js tests/raw-input.test.js tests/resource-policy.test.js tests/runtime-paths.test.js tests/settings-store.test.js tests/text-conversion-integration.test.js tests/text-conversion.test.js tests/tga-input.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/xml-json.test.js tests/zip-util.test.js"
+    "test": "node --test tests/agent-skill-installer.test.js tests/av3a-format.test.js tests/bmp-input.test.js tests/bmp-output.test.js tests/build-engine-manifest.test.js tests/capability-refresh.test.js tests/ci-engine-release.test.js tests/cli-runtime-cleanup.test.js tests/cli.test.js tests/conversion-audit-regressions.test.js tests/conversion-integrity.test.js tests/conversion-preferences.test.js tests/conversion-progress-http.test.js tests/conversion-progress.test.js tests/conversion.test.js tests/desktop-entry-compat.test.js tests/desktop-recovery.test.js tests/desktop-shutdown.test.js tests/desktop-startup.test.js tests/diagnostics-export.test.js tests/diagnostics.test.js tests/distribution-footprint.test.js tests/download-release.test.js tests/ebook-integrity.test.js tests/ebook-large-text.test.js tests/ebook.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/i18n.test.js tests/ico-format.test.js tests/image-conversion.test.js tests/image-merge-regressions.test.js tests/kgma-format.test.js tests/kwm-format.test.js tests/logger.test.js tests/macos-packaging.test.js tests/markdown-document.test.js tests/media-codec.test.js tests/mflac-format.test.js tests/mouse-assets.test.js tests/ncm-metadata.test.js tests/ocr-merge.test.js tests/ocr-page-diagnostics.test.js tests/ocr-quality.test.js tests/ofd-convert.test.js tests/office-crc-repair.test.js tests/office-engine.test.js tests/office-process-attribution.test.js tests/office-process.test.js tests/office-quality.test.js tests/office-readiness.test.js tests/office-wps-repair.test.js tests/pandoc-engine.test.js tests/pdf-classifier.test.js tests/pdf-content-fidelity.test.js tests/pdf-ocr-regions.test.js tests/pdf-page-completeness.test.js tests/pdf-scanned-routing.test.js tests/pdf-structure-contract.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/pdf2docx.test.js tests/pe-metadata.test.js tests/preview.test.js tests/process-output.test.js tests/public-package.test.js tests/raw-input.test.js tests/release-version-sync-atomic.test.js tests/release-version-sync.test.js tests/resource-error-http.test.js tests/resource-policy.test.js tests/runtime-cleanup.test.js tests/runtime-paths.test.js tests/save-converted-result.test.js tests/save-dialog.test.js tests/save-download.test.js tests/settings-degrade-ui.test.js tests/settings-store.test.js tests/settings-sync.test.js tests/store-capabilities.test.js tests/store-engine-cache.test.js tests/subtitles.test.js tests/text-conversion-integration.test.js tests/text-conversion.test.js tests/text-encoding.test.js tests/text-fidelity-regression.test.js tests/tga-input.test.js tests/ui-error-recovery.test.js tests/ui-operation-lifecycle.test.js tests/ui-progress.test.js tests/ui-queue-lifecycle.test.js tests/ui-static.test.js tests/ui-text-encoding.test.js tests/upload-budget.test.js tests/utils.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/windows-lite-profile.test.js tests/xml-json.test.js tests/zip-util.test.js",
+    "test:ci": "node --test tests/agent-skill-installer.test.js tests/av3a-format.test.js tests/bmp-input.test.js tests/bmp-output.test.js tests/build-engine-manifest.test.js tests/capability-refresh.test.js tests/ci-engine-release.test.js tests/cli-runtime-cleanup.test.js tests/cli.test.js tests/conversion-audit-regressions.test.js tests/conversion-integrity.test.js tests/conversion-preferences.test.js tests/conversion-progress-http.test.js tests/conversion-progress.test.js tests/conversion.test.js tests/desktop-entry-compat.test.js tests/desktop-recovery.test.js tests/desktop-shutdown.test.js tests/desktop-startup.test.js tests/diagnostics-export.test.js tests/diagnostics.test.js tests/distribution-footprint.test.js tests/download-release.test.js tests/ebook-integrity.test.js tests/ebook-large-text.test.js tests/ebook.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/i18n.test.js tests/ico-format.test.js tests/image-conversion.test.js tests/image-merge-regressions.test.js tests/kgma-format.test.js tests/kwm-format.test.js tests/logger.test.js tests/macos-packaging.test.js tests/markdown-document.test.js tests/media-codec.test.js tests/mflac-format.test.js tests/mouse-assets.test.js tests/ncm-metadata.test.js tests/ocr-merge.test.js tests/ocr-page-diagnostics.test.js tests/ocr-quality.test.js tests/ofd-convert.test.js tests/office-crc-repair.test.js tests/office-engine.test.js tests/office-process-attribution.test.js tests/office-process.test.js tests/office-quality.test.js tests/office-readiness.test.js tests/office-wps-repair.test.js tests/pandoc-engine.test.js tests/pdf-classifier.test.js tests/pdf-content-fidelity.test.js tests/pdf-ocr-regions.test.js tests/pdf-page-completeness.test.js tests/pdf-scanned-routing.test.js tests/pdf-structure-contract.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/pdf2docx.test.js tests/pe-metadata.test.js tests/preview.test.js tests/process-output.test.js tests/public-package.test.js tests/raw-input.test.js tests/release-version-sync-atomic.test.js tests/release-version-sync.test.js tests/resource-error-http.test.js tests/resource-policy.test.js tests/runtime-cleanup.test.js tests/runtime-paths.test.js tests/save-converted-result.test.js tests/save-dialog.test.js tests/save-download.test.js tests/settings-degrade-ui.test.js tests/settings-store.test.js tests/settings-sync.test.js tests/store-capabilities.test.js tests/store-engine-cache.test.js tests/subtitles.test.js tests/text-conversion-integration.test.js tests/text-conversion.test.js tests/text-encoding.test.js tests/text-fidelity-regression.test.js tests/tga-input.test.js tests/ui-error-recovery.test.js tests/ui-operation-lifecycle.test.js tests/ui-progress.test.js tests/ui-queue-lifecycle.test.js tests/ui-static.test.js tests/ui-text-encoding.test.js tests/upload-budget.test.js tests/utils.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/windows-lite-profile.test.js tests/xml-json.test.js tests/zip-util.test.js",
+    "restore:pandoc": "node scripts/restore-pandoc.js",
+    "dist:appx": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-appx.ps1",
+    "dist:lite": "node scripts/build-windows-lite.js"
   },
   "dependencies": {
+    "@lezer/markdown": "1.6.3",
     "@miconvert/ofd-to-pdf": "^0.2.3",
     "@tesseract.js-data/chi_sim": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
     "@tesseract.js-data/tha": "1.0.0",
-    "csv-parse": "5.6.0",
+    "csv-parse": "7.0.2",
     "docx": "9.5.1",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
     "js-yaml": "^4.3.1",
+    "katex": "0.18.7",
     "mammoth": "^1.12.0",
     "marked": "9.1.6",
     "mime-types": "^2.1.35",
     "multer": "^2.0.2",
+    "parse5": "7.3.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.2.108",
     "sanitize-filename": "^1.6.3",
@@ -49,7 +55,9 @@
     "yazl": "^3.3.1"
   },
   "overrides": {
-    "uuid": "^11.1.1"
+    "uuid": "^11.1.1",
+    "fast-xml-parser": "5.11.1",
+    "qs": "6.16.0"
   },
   "devDependencies": {
     "electron": "^43.1.0",
@@ -83,12 +91,15 @@
       "pdf-office-docx.js",
       "pdf-office-xlsx.js",
       "text-conversion.js",
+      "text-encoding.js",
       "office-engine.js",
       "office-quality.js",
       "diagnostics.js",
       "runtime-paths.js",
       "image-conversion.js",
+      "design-export.js",
       "bmp-input.js",
+      "bmp-output.js",
       "ico-format.js",
       "xml-json.js",
       "ebook.js",
@@ -97,14 +108,8 @@
       "ci-engines-v1.json",
       "logger.js",
       "settings-store.js",
-      "audio-format-utils.js",
-      "ncm-format.js",
-      "ncm-metadata.js",
-      "av3a-format.js",
-      "kgg-format.js",
-      "mflac-format.js",
-      "kgma-format.js",
-      "kwm-format.js",
+      "save-download.js",
+      "store-engine-cache.js",
       "config.js",
       "utils.js",
       "media.js",
@@ -121,7 +126,38 @@
       "public/**/*",
       "agent-skill/**/*",
       "package.json",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "markdown-document.js",
+      "markdown-math.js",
+      "engine-smoke-validator.js",
+      "save-converted-result.js",
+      "THIRD_PARTY_NOTICES.md",
+      "third_party/**/*",
+      "office-readiness.js",
+      "store-engine-worker.js",
+      "subtitles.js",
+      "markdown-asset-references.js",
+      "pdf-ocr-regions.js",
+      "desktop-recovery.js",
+      "office-runtime.js",
+      "office-process.js",
+      "office-smoke-runner.js",
+      "conversion-cancellation.js",
+      "save-dialog.js",
+      "desktop-shutdown.js",
+      "owned-tasks.js",
+      "upload-budget.js",
+      "!node_modules/**/*.{js,mjs,cjs,css,ts,min}.map",
+      "!node_modules/@tesseract.js-data/{eng,chi_sim,tha}/**/*.traineddata.gz",
+      "conversion-progress.js",
+      "audio-format-utils.js",
+      "ncm-format.js",
+      "ncm-metadata.js",
+      "av3a-format.js",
+      "kgg-format.js",
+      "mflac-format.js",
+      "kgma-format.js",
+      "kwm-format.js"
     ],
     "asarUnpack": [
       "node_modules/sharp/**/*",
@@ -143,7 +179,13 @@
         },
         {
           "from": "bin/libreoffice",
-          "to": "libreoffice"
+          "to": "libreoffice",
+          "filter": [
+            "**/*",
+            "!**/share/extensions/dict-*/th_*.dat",
+            "!**/share/extensions/dict-*/th_*.idx",
+            "!**/share/config/images_{breeze,breeze_dark,breeze_svg,breeze_dark_svg,elementary,elementary_svg,karasa_jaga,karasa_jaga_svg,sifr,sifr_dark,sifr_svg,sifr_dark_svg,sukapura,sukapura_dark,sukapura_svg,sukapura_dark_svg}.zip"
+          ]
         },
         {
           "from": "bin/poppler",
@@ -163,7 +205,14 @@
         },
         {
           "from": "bin/qpdf/extracted/qpdf-12.4.0-msvc64",
-          "to": "qpdf"
+          "to": "qpdf",
+          "filter": [
+            "**/*",
+            "!include/**/*",
+            "!lib/**/*",
+            "!share/**/*",
+            "**/{LICENSE*,license*,COPYING*,copying*,NOTICE*,notice*,COPYRIGHT*,copyright*}"
+          ]
         },
         {
           "from": "bin/docstructure",
@@ -174,8 +223,8 @@
           "to": "tessdata/tha.traineddata.gz"
         },
         {
-          "from": "node_modules/tesseract.js-core",
-          "to": "tesseract.js-core"
+          "from": "bin/pandoc",
+          "to": "pandoc"
         }
       ],
       "target": [
@@ -213,6 +262,10 @@
         {
           "from": "node_modules/tesseract.js-core",
           "to": "tesseract.js-core"
+        },
+        {
+          "from": "bin/pandoc",
+          "to": "pandoc"
         }
       ]
     },
@@ -234,6 +287,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "FlyingMouse Format"
-    }
+    },
+    "beforePack": "scripts/prepare-windows-package.js",
+    "afterSign": "scripts/attach-windows-launcher.js"
   }
 }

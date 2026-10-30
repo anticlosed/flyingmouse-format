@@ -185,7 +185,9 @@ function expectedTable(descriptor) {
     if (!Number.isFinite(cellConfidence) || cellConfidence < 0 || cellConfidence > 1) {
       throw stableError("PDF_OFFICE_OUTPUT_INVALID");
     }
-    if (cellConfidence < REVIEW_CELL_CONFIDENCE) {
+    // No OCR evidence is expected for intentionally blank cells. Only recognized
+    // content can require confidence review; preserve empty form rows as empty.
+    if (normalizeCellText(sourceCell.text).trim() && cellConfidence < REVIEW_CELL_CONFIDENCE) {
       review.push({
         pageNumber: descriptor.pageNumber,
         sheetName: descriptor.sheetName,

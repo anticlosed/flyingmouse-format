@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>FlyingMouse Format</title>
     <link rel="icon" href="/assets/mouse-format/mouse-idle.png">
+    <script src="/theme.js"></script>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
@@ -19,10 +20,18 @@
                 <h1 data-i18n="brand.title">鼠鼠帮你把文件转成需要的格式</h1>
                 <p class="feedback-line" data-i18n="feedback.guide">问题反馈：转换遇到问题，请导出诊断报告并查看错误提示，帮助信息详见软件说明。</p>
               </div>
-              <p class="author-line">仅供个人免费使用，禁止商业售卖/转卖/套壳 · 支持普通及部分音乐平台格式转换，具体以当前支持列表为准 · 请支持正版音乐</p>
+              <p class="author-line" data-i18n="brand.usage">仅供个人免费使用，禁止商业售卖/转卖/套壳 · 支持普通及部分音乐平台格式转换，具体以当前支持列表为准 · 请支持正版音乐</p>
             </div>
           </div>
           <div class="topbar-actions">
+            <label class="language-field theme-field">
+              <span data-i18n="theme.label">外观</span>
+              <select id="themeSelect" data-i18n-aria="theme.label" aria-label="外观">
+                <option value="system" data-i18n="theme.system">跟随系统</option>
+                <option value="light" data-i18n="theme.light">浅色</option>
+                <option value="dark" data-i18n="theme.dark">深色</option>
+              </select>
+            </label>
             <button class="ghost-button diagnostics-button" id="agentInstallButton" type="button" data-i18n="agent.install">接入 Agent</button>
             <button class="ghost-button diagnostics-button" id="diagnosticsButton" type="button" data-i18n="diagnostics.export">导出诊断</button>
             <label class="language-field">
@@ -77,15 +86,17 @@
             </label>
             <p class="format-hint" id="pdfExcelHint" data-i18n="pdfExcel.hint" hidden>适合电子版规则表格；扫描件、复杂表头和合并单元格可能不完整。</p>
 
-            <label class="field" id="zipCompressionField" hidden>
-              <span data-i18n="zip.label">ZIP 压缩级别（0=不压缩，9=最大）</span>
-              <select id="zipCompression">
-                <option value="0" data-i18n="zip.0">0 不压缩（最快）</option>
-                <option value="1" data-i18n="zip.1">1 最快</option>
-                <option value="6" selected data-i18n="zip.6">6 标准（默认）</option>
-                <option value="9" data-i18n="zip.9">9 最大压缩（最慢）</option>
+            <div class="field" id="textEncodingField" hidden>
+              <label for="textEncoding" data-i18n="textEncoding.label">源文件编码</label>
+              <select id="textEncoding" aria-describedby="textEncodingHint">
+                <option value="auto" selected data-i18n="textEncoding.auto">自动（UTF-8 / UTF-16 BOM）</option>
+                <option value="utf-8" data-i18n="textEncoding.utf8">UTF-8</option>
+                <option value="gb18030" data-i18n="textEncoding.gb18030">GBK / GB18030</option>
+                <option value="utf-16le" data-i18n="textEncoding.utf16le">UTF-16LE</option>
+                <option value="utf-16be" data-i18n="textEncoding.utf16be">UTF-16BE</option>
               </select>
-            </label>
+              <p class="field-help" id="textEncodingHint" data-i18n="textEncoding.hint">自动仅识别 UTF-8 或带 BOM 的 UTF-16。GBK 文本请手动选择；批量文本使用同一编码。</p>
+            </div>
 
             <label class="field" id="videoCodecField" hidden>
               <span data-i18n="videoCodec.label">视频编码</span>
@@ -113,7 +124,8 @@
             <label class="field" id="pdfActionField" hidden>
               <span data-i18n="pdfAction.label">PDF 操作</span>
               <select id="pdfAction">
-                <option value="" data-i18n="pdfAction.split">拆分 PDF（默认）</option>
+                <option value="merge" data-i18n="pdfAction.merge" hidden disabled>合并为一个 PDF</option>
+                <option value="" data-i18n="pdfAction.split" selected>拆分 PDF（输出 ZIP）</option>
                 <option value="encrypt" data-i18n="pdfAction.encrypt">加密 PDF</option>
                 <option value="decrypt" data-i18n="pdfAction.decrypt">解密 PDF</option>
               </select>
@@ -130,9 +142,15 @@
               <input id="pdfGroupSize" type="number" min="2" max="999" value="2" inputmode="numeric">
             </label>
 
-            <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">开始转换</button>
+            <label class="field" id="imagePdfModeField" hidden>
+              <span data-i18n="imagePdfMode.label">多图转 PDF</span>
+              <select id="imagePdfMode">
+                <option value="merge" selected data-i18n="imagePdfMode.merge">合并为一个 PDF（默认）</option>
+                <option value="separate" data-i18n="imagePdfMode.separate">每张图片单独生成 PDF</option>
+              </select>
+            </label>
 
-            <button class="ghost-button compress-folder-button" id="compressFolderButton" type="button" data-i18n="action.compressFolder">压缩文件夹</button>
+            <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">开始转换</button>
 
             <div class="progress-panel" id="progressPanel" hidden>
               <div class="progress-header">
@@ -141,6 +159,11 @@
               </div>
               <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-i18n-aria="progress.label" aria-label="转换进度">
                 <div class="progress-fill" id="progressFill"></div>
+              </div>
+              <div class="progress-details" id="progressDetails"></div>
+              <div class="progress-summary">
+                <span id="progressBatch"></span>
+                <span id="progressElapsed" role="timer" aria-live="off"></span>
               </div>
             </div>
 
@@ -188,6 +211,7 @@
 
     <script src="/i18n.js"></script>
     <script src="/conversion-preferences.js"></script>
+    <script src="/settings-sync.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

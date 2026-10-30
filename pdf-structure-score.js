@@ -312,7 +312,12 @@ function scoreNormalized(normalized) {
   }
 
   const gridSlots = table.rowCount * table.columnCount;
-  const meanCellConfidence = rounded(table.cells.reduce((sum, cell) => sum + cell.confidence, 0) / table.cells.length);
+  // OCR confidence measures recognized text. Empty cells have no OCR evidence;
+  // averaging their zeroes rejects clear forms with intentionally blank rows.
+  // Grid coverage and minimum populated ratio still assess sparse geometry.
+  const populatedCells = table.cells.filter((cell) => normalizeCompareValue(cell.text).length > 0);
+  const meanCellConfidence = populatedCells.length === 0 ? 0
+    : rounded(populatedCells.reduce((sum, cell) => sum + cell.confidence, 0) / populatedCells.length);
   const populatedCellRatio = rounded(geometry.populatedAnchors / gridSlots);
   const gridConsistency = rounded(geometry.occupiedSlots / gridSlots);
   const spanValidity = 1;

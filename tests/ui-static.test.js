@@ -2,12 +2,28 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const { test } = require("node:test");
+const vm = require("node:vm");
 
 const publicRoot = path.join(__dirname, "..", "public");
 
 function readPublic(fileName) {
   return fs.readFileSync(path.join(publicRoot, fileName), "utf8");
 }
+
+test("Word targets are recognizable in both languages and PDF splitting names its ZIP output", () => {
+  const source = readPublic("app.js");
+  const labels = source.slice(source.indexOf("function targetFormatLabel("), source.indexOf("function commonTargetsFrom("));
+  const context = { state: { fileInfos: [{ category: "pdf" }] }, i18n: { language: "zh-CN" } };
+  vm.runInNewContext(labels, context);
+  assert.equal(context.targetFormatLabel("docx"), "Word（DOCX）");
+  assert.equal(context.targetFormatLabel("xlsx"), "Excel（智能表格提取）");
+  assert.equal(context.targetFormatLabel("pdf"), "PDF");
+  context.i18n.language = "en-US";
+  assert.equal(context.targetFormatLabel("docx"), "Word (DOCX)");
+  assert.equal(context.targetFormatLabel("xlsx"), "Excel (smart table extraction)");
+  assert.match(readPublic("index.html"), /data-i18n="pdfAction\.split"[^>]*>拆分 PDF（输出 ZIP）/);
+  assert.match(source, /"pdfAction\.split": "Split PDF \(ZIP output\)"/);
+});
 
 test("renderer exposes workflow hooks and drop zone copy", () => {
   const html = readPublic("index.html");
@@ -40,7 +56,8 @@ test("renderer uses the mouse brand and favicon", () => {
 
 test("original mouse visual theme classes are present", () => {
   const css = readPublic("styles.css");
-  assert.match(css, /--accent:\s*#e95f6d/);
+  assert.match(css, /background:\s*var\(--accent\)/);
+  assert.match(css, /:root\[data-theme="dark"\]/);
   assert.match(css, /\.workflow-steps/);
   assert.match(css, /\.mouse-stage/);
   assert.match(css, /\.mouse-mascot/);
@@ -68,7 +85,9 @@ test("renderer restores and updates target preferences through durable Electron 
   assert.match(html, /conversion-preferences\.js/);
   assert.match(app, /migrateLegacySettings/);
   assert.match(app, /preferredTarget\(state\.settings\.targetBySource/);
-  assert.match(app, /logBridge\.updateSettings\(\{\s*targetBySource\s*\}/s);
+  // P2（0.6.10）：持久化统一走 persistSettings()（失败降级），回调不再裸调 IPC。
+  assert.match(app, /await persistSettings\(\{ targetBySource \}\)/);
+  assert.match(app, /logBridge\.updateSettings\(patch\)/);
   assert.doesNotMatch(app, /preferredTarget\(localStorage/);
   assert.doesNotMatch(app, /rememberTarget\(localStorage/);
 });
@@ -132,7 +151,29 @@ test("video targets expose a transparent background color selector", () => {
   assert.match(app, /form\.append\("alphaBackground"/);
 });
 
+test("multiple images to PDF expose a merge/separate mode selector", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="imagePdfModeField"[^>]*hidden/);
+  assert.match(html, /id="imagePdfMode"/);
+  assert.match(app, /"imagePdfMode\.label"/);
+  assert.match(app, /"imagePdfMode\.merge"/);
+  assert.match(app, /"imagePdfMode\.separate"/);
+  assert.match(app, /imagePdfModeField\.hidden/);
+  assert.match(app, /imagePdfMode\?\.value === "separate"/);
+});
 
+test("image capabilities include design inputs and expanded output formats", () => {
+  const { imageInput, designInput, imageFormatTargets } = require("../config");
+  const inputs = new Set([...imageInput, ...designInput]);
+  for (const expected of ["svg", "ai", "psd", "jp2", "j2k", "jxl", "qoi", "ppm"]) {
+    assert.ok(inputs.has(expected), `${expected} missing from image inputs`);
+  }
+  const targets = new Set(imageFormatTargets);
+  for (const expected of ["png", "jpg", "webp", "gif", "avif", "tiff", "ico", "bmp", "tga", "jp2", "jxl", "qoi", "ppm", "pdf"]) {
+    assert.ok(targets.has(expected), `${expected} missing from imageFormatTargets`);
+  }
+});
 
 test("renderer no longer enforces a batch size limit and localizes resource errors", () => {
   const app = readPublic("app.js");
@@ -196,16 +237,16 @@ test("PDF split mode exposes page/group options and a group-size field bilingual
   assert.match(app, /pdfSplitMode\.addEventListener\("change", syncPdfActionFields\)/);
 });
 
-test("folder compression is exposed through the trusted bridge bilingually", () => {
+test("folder compression is removed from the UI (2026-09-04 feature removal)", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
-  assert.match(html, /id="compressFolderButton"/);
-  assert.match(app, /"action\.compressFolder": "压缩文件夹"/);
-  assert.match(app, /"action\.compressFolder": "Compress folder"/);
-  assert.match(app, /"compressFolder\.saved": "已压缩 \{count\} 个文件到：\{path\}"/);
-  assert.match(app, /"compressFolder\.saved": "Compressed \{count\} files to: \{path\}"/);
-  assert.match(app, /logBridge\.compressFolder/);
-  assert.match(app, /compressFolderButton\.addEventListener\("click"/);
+  const css = readPublic("styles.css");
+  assert.doesNotMatch(html, /compressFolderButton/);
+  assert.doesNotMatch(html, /zipCompressionField/);
+  assert.doesNotMatch(app, /compressFolder/);
+  assert.doesNotMatch(app, /zipCompression/);
+  assert.doesNotMatch(app, /"zip\./);
+  assert.doesNotMatch(css, /compress-folder-button/);
   assert.doesNotMatch(app, /\.innerHTML\s*=/);
 });
 
@@ -217,7 +258,7 @@ test("folder-to-PDF entry is exposed bilingually with webkitdirectory input", ()
   assert.match(html, /id="chooseFolderButton"/);
   assert.match(app, /"upload\.chooseFolder": "选择文件夹转 PDF"/);
   assert.match(app, /"upload\.chooseFolder": "Choose folder → PDF"/);
-  assert.match(app, /chooseFolderButton\.addEventListener\("click", \(\) => folderInput\.click\(\)\)/);
+  assert.match(app, /chooseFolderButton\.addEventListener\("click", \(\) => \{ if \(!state\.isConverting\) folderInput\.click\(\); \}\)/);
   assert.match(app, /folderInput\.addEventListener\("change"/);
   assert.match(app, /state\.folderName/);
   assert.match(app, /webkitRelativePath/);

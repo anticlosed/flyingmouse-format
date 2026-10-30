@@ -7,15 +7,15 @@ const { after, before, test } = require("node:test");
 
 const runtimeDir = path.join(os.tmpdir(), `flyingmouse-text-integration-${process.pid}`);
 process.env.FLYINGMOUSE_RUNTIME_DIR = runtimeDir;
-// csv->pdf 走 LibreOffice html->pdf 管线；本机已安装版引擎存在时启用，否则跳过该断言。
+// csv->pdf 走 LibreOffice html->pdf 管线；使用当前配置的引擎，不绑定开发者安装目录。
 // 注意必须用 soffice.com（命令行壳）：portable 版 soffice.exe 会拉起 GUI 挂起，probe 超时。
-const candidateLo = "C:\\Users\\34615\\AppData\\Local\\Programs\\FlyingMouse Format\\resources\\libreoffice\\LibreOfficePortable\\App\\libreoffice\\program\\soffice.com";
+const candidateLo = require("../config").LIBREOFFICE_PATH;
 const LO_AVAILABLE = require("node:fs").existsSync(candidateLo);
 if (LO_AVAILABLE) process.env.FLYINGMOUSE_LIBREOFFICE_PATH = candidateLo;
-const { startServer, createUploadStorage, platformCapabilities } = require("../server");
-const { DCRAW_PATH, audioInput, mediaAudioTargets, rawInput, unlockAudioInputs } = require("../config");
+const { startServer, createServerUploadStorage, platformCapabilities } = require("../server");
+const { DCRAW_PATH, audioInput, mediaAudioTargets, rawInput, unlockAudioInputs, experimentalInputsByCategory } = require("../config");
 const { MAX_SPECIAL_AUDIO_BYTES } = require("../audio-format-utils");
-const { categoryForExt, targetsForExt } = require("../utils");
+const { categoryForExt, targetsForExt, extFromName } = require("../utils");
 
 const SPECIAL_AUDIO_EXTENSIONS = ["ncm", "kgg", "mflac", "mgg", "kgma", "mmp4", "kwm"];
 
@@ -100,6 +100,30 @@ test("server flags txt to JSON as a raw-text wrapper warning instead of pretendi
   assert.equal(payload.text, "just some plain text\nno structure here");
   assert.ok(Array.isArray(body.warnings), "expected warnings array");
   assert.ok(body.warnings.some((warning) => warning.code === "TEXT_JSON_WRAPPED"));
+});
+
+test("server returns a client error for unsupported mathematics and corrupt ebook containers", async () => {
+  const math = await convertResponse("equation.md", "$\\unsupportedMouseMacro{x}$", "html", "text/markdown");
+  assert.equal(math.response.status, 422);
+  assert.equal(math.body.errorCode, "MARKDOWN_MATH_UNSUPPORTED");
+  assert.match(math.body.messages.enUS, /mathematics/);
+  for (const extension of ["epub", "mobi"]) {
+    const result = await convertResponse(`corrupt.${extension}`, "invalid binary container", "txt", "application/octet-stream");
+    assert.equal(result.response.status, 422);
+    assert.match(result.body.errorCode, /^(EPUB|MOBI)_PARSE_FAILED$/);
+  }
+});
+
+test("server exposes the real Pandoc probe and propagates missing Markdown image warnings", async (t) => {
+  const capabilities = await (await fetch(`${baseUrl}/api/capabilities`)).json();
+  assert.equal(typeof capabilities.tools.pandoc, "boolean");
+  assert.equal(capabilities.toolDetails.pandoc.enabled, capabilities.tools.pandoc);
+  if (!capabilities.tools.pandoc) return t.skip("Bundled Pandoc is unavailable on this test host");
+  const result = await convertResponse("rich.md", "# Heading\n\n$E=mc^2$\n\n![图片](missing.png)", "docx", "text/markdown");
+  assert.equal(result.response.status, 200, result.body.error);
+  assert.ok(result.body.warnings.some((warning) => warning.code === "MARKDOWN_IMAGE_UNAVAILABLE"));
+  const buffer = Buffer.from(await (await fetch(`${baseUrl}${result.body.downloadUrl}`)).arrayBuffer());
+  assert.equal(buffer.toString("ascii", 0, 2), "PK");
 });
 
 test("server converts CSV to JSON without the wrapper warning (real parse)", async () => {
@@ -193,13 +217,10 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
   const response = await fetch(`${baseUrl}/api/capabilities`);
   assert.equal(response.status, 200);
   const capabilities = await response.json();
-  assert.deepEqual(capabilities.limits, {
-    maxImagePixels: Number.MAX_SAFE_INTEGER,
-    maxImageDimension: Number.MAX_SAFE_INTEGER,
-    maxImagePdfPixels: Number.MAX_SAFE_INTEGER,
-    maxBatchBytes: Number.MAX_SAFE_INTEGER
-  });
-  assert.deepEqual(capabilities.groups.image.experimentalInputs, ["heic", "heif", "ico", "tga"].concat(DCRAW_PATH ? [...rawInput] : []).sort());
+  assert.deepEqual(capabilities.limits, require('../resource-policy').LIMITS);
+  assert.ok(capabilities.limits.maxImagePixels < 100_000_000);
+  assert.ok(capabilities.limits.maxBatchBytes < Number.MAX_SAFE_INTEGER);
+  assert.deepEqual(capabilities.groups.image.experimentalInputs, [...experimentalInputsByCategory.image, ...(DCRAW_PATH ? rawInput : [])].sort());
   assert.deepEqual(capabilities.groups.document.experimentalInputs, ["wpd", "wps", "wpt"]);
   assert.deepEqual(capabilities.groups.spreadsheet.experimentalInputs, ["et", "ett"]);
   assert.deepEqual(capabilities.groups.presentation.experimentalInputs, ["dps", "dpt"]);
@@ -233,7 +254,7 @@ test("special audio formats are registered and expose audio targets outside Stor
       assert.equal(audioInput.has(extension), true, `${extension} is missing from audioInput`);
       assert.equal(unlockAudioInputs.has(extension), true, `${extension} is missing from unlockAudioInputs`);
       assert.equal(categoryForExt(extension), "audio");
-      assert.deepEqual(targetsForExt(extension, { ffmpeg: true }), ["zip", ...mediaAudioTargets]);
+      assert.deepEqual(targetsForExt(extension, { ffmpeg: true }), [...mediaAudioTargets]);
     }
   } finally {
     if (hadWindowsStore) process.windowsStore = previous;
@@ -241,9 +262,9 @@ test("special audio formats are registered and expose audio targets outside Stor
   }
 });
 
-test("createUploadStorage rejects oversized special audio once and removes the partial file", async () => {
+test("createServerUploadStorage rejects oversized special audio once and removes the partial file", async () => {
   assert.equal(MAX_SPECIAL_AUDIO_BYTES, 512 * 1024 * 1024);
-  const storage = createUploadStorage({ specialMaxBytes: 4, defaultMaxBytes: 16 });
+  const storage = createServerUploadStorage({ specialMaxBytes: 4, defaultMaxBytes: 16 });
   const req = {};
   const file = {
     originalname: "oversized.ncm",
@@ -309,7 +330,7 @@ test("Store mode hides and rejects every special audio format", async () => {
     assert.equal(capabilities.groups.audio.inputs.includes("mp3"), true);
     for (const extension of SPECIAL_AUDIO_EXTENSIONS) {
       assert.equal(capabilities.groups.audio.inputs.includes(extension), false);
-      assert.deepEqual(targetsForExt(extension, { ffmpeg: true }), ["zip"]);
+      assert.deepEqual(targetsForExt(extension, { ffmpeg: true }), []);
 
       const targetResponse = await fetch(`${baseUrl}/api/targets`, {
         method: "POST",
@@ -318,7 +339,7 @@ test("Store mode hides and rejects every special audio format", async () => {
       });
       const targetBody = await targetResponse.json();
       assert.equal(targetResponse.status, 200);
-      assert.deepEqual(targetBody.targets, ["zip"]);
+      assert.deepEqual(targetBody.targets, []);
 
       const conversion = await convertResponse(
         `sample.${extension}`,
@@ -341,7 +362,7 @@ test("packaging and Win7 staging include the new runtime modules", () => {
   const packageJson = require("../package.json");
   const source = require("node:fs").readFileSync(path.join(__dirname, "..", "win7-build-profile.js"), "utf8");
   assert.ok(packageJson.build.files.includes("pdf-classifier.js"), "pdf-classifier.js is missing from build.files");
-  for (const file of ["resource-policy.js", "text-conversion.js", "pdf-table-extractor.js", "pdf-table-runtime.js", "audio-format-utils.js", "ncm-format.js", "ncm-metadata.js", "av3a-format.js", "kgg-format.js", "mflac-format.js", "kgma-format.js", "kwm-format.js", "config.js", "utils.js", "media.js", "zip-util.js", "image.js", "ocr.js", "pdfjs.js", "pdf-table.js", "pdf.js", "text-docx.js", "office-convert.js"]) {
+  for (const file of ["resource-policy.js", "text-conversion.js", "text-encoding.js", "pdf-table-extractor.js", "pdf-table-runtime.js", "audio-format-utils.js", "ncm-format.js", "ncm-metadata.js", "av3a-format.js", "kgg-format.js", "mflac-format.js", "kgma-format.js", "kwm-format.js", "config.js", "utils.js", "media.js", "zip-util.js", "image.js", "ocr.js", "pdfjs.js", "pdf-table.js", "pdf.js", "text-docx.js", "office-convert.js"]) {
     assert.ok(packageJson.build.files.includes(file), `${file} is missing from build.files`);
     assert.match(source, new RegExp(`["]${file.replace(".", "\\.")}["]`));
   }

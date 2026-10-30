@@ -288,7 +288,7 @@ test("high-confidence discounts and legitimate minority prices are never rewritt
   assert.deepEqual(model.sheets[1].rows, minorityRows);
 });
 
-test("high-confidence missing decimal points are repaired only when multiplication proves them", () => {
+test("high-confidence prices are preserved even when a decimal shift would satisfy multiplication", () => {
   const rows = [
     ["SKU", "Price", "Quantity", "Total"],
     ["A", "53", "240", "1272"],
@@ -301,10 +301,37 @@ test("high-confidence missing decimal points are repaired only when multiplicati
     bounds: { left: 0, top: 20, right: 200, bottom: 150 }
   }] }]);
   assert.deepEqual(model.sheets[0].rows.slice(1), [
-    ["A", "5.3", "240", "1272"],
-    ["B", "4.1", "1152", "4723.2"],
+    ["A", "53", "240", "1272"],
+    ["B", "41", "1152", "4723.2"],
     ["Discount", "10", "2", "18"]
   ]);
+});
+
+test("OCR decimal quantities and signed values survive arithmetic postprocessing unchanged", () => {
+  const rows = [["Price", "Quantity", "Total"], ["10", "1.5", "15"], ["20", "2.5", "50"], ["30", "3.5", "105"], ["10", "-2", "-20"]];
+  for (const confidence of [0.96, 0.5]) {
+    const page = detectTablesOnPage({
+      pageNumber: 1, width: 300, height: 180, source: "ocr",
+      lines: [
+        ...Array.from({ length: 6 }, (_, i) => ({ x1: 0, y1: i * 30, x2: 300, y2: i * 30 })),
+        ...[0, 100, 200, 300].map(x => ({ x1: x, y1: 0, x2: x, y2: 150 }))
+      ],
+      words: rows.flatMap((row, r) => row.map((text, c) => word(text, c * 100 + 10, r * 30 + 5, confidence, 70)))
+    });
+    assert.deepEqual(page.tables[0].rows, rows);
+    const model = buildWorkbookModel([page]);
+    assert.deepEqual(model.sheets[0].rows, rows, "second repair pass must also preserve the original quantities");
+  }
+});
+
+test("a low-confidence quantity does not authorize changing a high-confidence price or total", () => {
+  const rows = [["Price", "Quantity", "Total"], ["53", "240", "1272"], ["10", "2", "18"], ["10", "3", "30"]];
+  const model = buildWorkbookModel([{ pageNumber: 1, width: 300, height: 180, source: "ocr", warnings: [], rawRows: [], tables: [{
+    kind: "grid", rows, merges: [], confidence: 0.8, pages: [1],
+    cellConfidence: rows.map(() => [0.96, 0.5, 0.96]), columnAnchors: [0, 100, 200, 300],
+    bounds: { left: 0, top: 0, right: 300, bottom: 150 }
+  }] }]);
+  assert.deepEqual(model.sheets[0].rows, rows);
 });
 
 test("electronic text rows are not merged by OCR-only damaged-grid recovery", () => {

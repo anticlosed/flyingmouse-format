@@ -197,6 +197,23 @@ test("uses the documented hard and review confidence thresholds", () => {
   assert.equal(REVIEW_CELL_CONFIDENCE, 0.85);
 });
 
+test("empty form cells stay blank and do not create false OCR review entries", async (t) => {
+  const root = await workspace(t);
+  const source = manifest();
+  const blank = source.pages[0].tables[0].cells.find((item) => item.row === 1 && item.column === 2);
+  blank.text = "";
+  blank.confidence = 0;
+  const outputPath = path.join(root, "blank-form.xlsx");
+  const result = await writePdfOfficeXlsx({ manifest: source, assetRoot: root, outputPath });
+  assert.equal(result.reviewCellCount, 1); // The existing uncertain populated D3 remains reviewed.
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(outputPath);
+  const actual = workbook.getWorksheet("P001-T01").getCell("C2");
+  assert.ok(actual.value === null || actual.value === "");
+  assert.equal(actual.note, undefined);
+  assert.equal(workbook.getWorksheet("待核对").getCell("C2").value, "D3");
+});
+
 test("writes deterministic structured sheets, exact recognized strings, merges, review records, metadata and references", async (t) => {
   const root = await workspace(t);
   const outputPath = path.join(root, "anonymous.xlsx");

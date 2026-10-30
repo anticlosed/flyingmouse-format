@@ -5,7 +5,11 @@ const STAGING_EXCLUDED_TESTS = new Set([
   "tests/conversion.test.js",
   "tests/win7-build-profile.test.js",
   "tests/win7-build-script.test.js",
-  "tests/pe-metadata.test.js"
+  "tests/pe-metadata.test.js",
+  "tests/build-engine-manifest.test.js",
+  "tests/pandoc-engine.test.js",
+  "tests/public-package.test.js",
+  "tests/distribution-footprint.test.js"
 ]);
 
 const REQUIRED_RUNTIME_FILES = [
@@ -20,11 +24,13 @@ const REQUIRED_RUNTIME_FILES = [
   "pdf-structure-score.js",
   "pdf-structure-engine.js",
   "text-conversion.js",
+  "text-encoding.js",
   "office-engine.js",
   "office-quality.js",
   "diagnostics.js",
   "runtime-paths.js",
   "image-conversion.js",
+  "design-export.js",
   "ico-format.js",
   "pdf-table-extractor.js",
   "pdf-table-runtime.js",
@@ -134,10 +140,13 @@ function createWin7Package(basePackage, projectRoot) {
   profile.build.artifactName = "${productName}-Setup-${version}-win7-${arch}.${ext}";
   profile.build.win.target = ["nsis"];
   delete profile.build.appx;
+  delete profile.build.beforePack;
+  // Electron 22 uses its independently validated legacy startup path.
+  delete profile.build.afterSign;
   // Python-backed docengine and docstructure runtimes are excluded from Win7;
   // their JavaScript boundary modules remain available for static imports.
   profile.build.extraResources = profile.build.win.extraResources
-    .filter((item) => ![item.from, item.to].some((value) => /docengine|docstructure/i.test(String(value))))
+    .filter((item) => ![item.from, item.to].some((value) => /docengine|docstructure|pandoc/i.test(String(value))))
     .map((item) => ({
       ...item,
       from: item.from.startsWith("bin/")
@@ -157,6 +166,9 @@ function stageSourceEntries(basePackage) {
 
   const entries = new Set(["build", "tests", "win7-build-profile.js", ...REQUIRED_RUNTIME_FILES]);
   for (const pattern of basePackage.build.files) {
+    // Keep exclusions in build.files for electron-builder, but do not treat
+    // them as source paths when preparing the independent legacy workspace.
+    if (pattern.startsWith("!")) continue;
     if (pattern === "node_modules" || pattern.startsWith("node_modules/")) continue;
     if (pattern.endsWith("/**/*")) {
       entries.add(pattern.slice(0, -5));

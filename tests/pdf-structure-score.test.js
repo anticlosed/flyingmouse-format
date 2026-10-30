@@ -72,13 +72,26 @@ test("computes the exact weighted score from confidence, populated anchors, grid
     cells: [cell(0, 0, "A", 0.8), cell(0, 1, "", 1), cell(1, 0, "B", 0.9)]
   }));
 
-  assert.equal(result.meanCellConfidence, 0.9);
+  assert.equal(result.meanCellConfidence, 0.85);
   assert.equal(result.populatedCellRatio, 0.5);
   assert.equal(result.gridConsistency, 0.75);
   assert.equal(result.spanValidity, 1);
-  assert.equal(result.score, 0.785);
+  assert.equal(result.score, 0.765);
   assert.equal(result.accepted, true);
   assert.deepEqual(result.reasons, []);
+});
+
+test("blank cells do not dilute OCR confidence or hide uncertain populated cells", () => {
+  const { scoreTableCandidate } = require("../pdf-structure-score");
+  const cells = Array.from({ length: 16 }, (_, index) => cell(Math.floor(index / 4), index % 4,
+    index >= 4 && index < 8 ? ["A-001", "2026-08", "0.00", "Confirmed"][index - 4] : "", index >= 4 && index < 8 ? 0.99 : 0));
+  const scored = scoreTableCandidate(candidate({ rows: 4, columns: 4, cells }));
+  assert.equal(scored.accepted, true);
+  assert.equal(scored.meanCellConfidence, 0.99);
+  assert.equal(scored.populatedCellRatio, 0.25);
+  assert.equal(scored.table.cells.filter((item) => item.text === "").length, 12);
+  const uncertain = cells.map((item) => ({ ...item, confidence: 0.1 }));
+  assert.equal(scoreTableCandidate(candidate({ rows: 4, columns: 4, cells: uncertain })).accepted, false);
 });
 
 test("counts populated anchor cells rather than slots covered by a spanning cell", () => {

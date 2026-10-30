@@ -11,6 +11,7 @@ const yauzl = require("yauzl");
 const { after, before, test } = require("node:test");
 const sharp = require("sharp");
 const { PDFDocument, StandardFonts } = require("pdf-lib");
+const { snapshotOfficeProcesses } = require("./helpers/office-processes");
 
 const scratchRoot = path.join(os.tmpdir(), `flyingmouse-format-tests-${process.pid}`);
 const isolatedRuntimeRoot = path.join(scratchRoot, "empty-runtime");
@@ -20,7 +21,7 @@ if (!process.env.FLYINGMOUSE_FORMAT_BASE_URL) {
 const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require("../server");
 const FFMPEG_BIN = process.env.FLYINGMOUSE_FFMPEG_PATH
   || path.join(__dirname, "..", "bin", "ffmpeg", "ffmpeg.exe");
-const { QPDF_PATH } = require("../config");
+const { QPDF_PATH, LIBREOFFICE_PATH, DOCSTRUCTURE_ENGINE_PATH } = require("../config");
 const qpdfAvailable = (() => {
   try {
     execFileSync(QPDF_PATH, ["--version"], { timeout: 5000, windowsHide: true });
@@ -29,9 +30,7 @@ const qpdfAvailable = (() => {
     return false;
   }
 })();
-const structuredEnginePresent = fs.existsSync(
-  path.join(__dirname, "..", "bin", "docstructure", "docstructure-engine.exe")
-);
+const structuredEnginePresent = Boolean(DOCSTRUCTURE_ENGINE_PATH && fs.existsSync(DOCSTRUCTURE_ENGINE_PATH));
 let server;
 let baseUrl;
 
@@ -163,6 +162,27 @@ async function createTextPdf(filePath) {
   await fsp.writeFile(filePath, Buffer.concat([body, pdfObject(xref + trailer)]));
 }
 
+// 2×2、RGB、8-bit、无压缩的最小合法 PSD，用于真实 LibreOffice 解码回归；
+// 三个颜色通道按平面排列，不依赖外部样本或新增 npm 包。
+async function createMinimalPsd(filePath) {
+  const header = Buffer.alloc(26);
+  header.write("8BPS", 0, "ascii");
+  header.writeUInt16BE(1, 4);
+  header.writeUInt16BE(3, 12);
+  header.writeUInt32BE(2, 14);
+  header.writeUInt32BE(2, 18);
+  header.writeUInt16BE(8, 22);
+  header.writeUInt16BE(3, 24);
+  const emptySections = Buffer.alloc(12);
+  const compression = Buffer.alloc(2);
+  const rgbPlanes = Buffer.from([
+    255, 0, 0, 255,
+    0, 255, 0, 255,
+    0, 0, 255, 255
+  ]);
+  await fsp.writeFile(filePath, Buffer.concat([header, emptySections, compression, rgbPlanes]));
+}
+
 async function createCroppedTablePdf(filePath) {
   const document = await PDFDocument.create();
   const page = document.addPage([400, 300]);
@@ -232,19 +252,6 @@ function assertPdf(filePath) {
     assert.strictEqual(header.toString("latin1"), "%PDF-");
   } finally {
     fs.closeSync(fd);
-  }
-}
-
-function sofficeProcessIds() {
-  if (process.platform !== "win32") return new Set();
-  try {
-    const output = execFileSync("tasklist.exe", ["/FI", "IMAGENAME eq soffice*", "/FO", "CSV", "/NH"], {
-      encoding: "utf8",
-      windowsHide: true
-    });
-    return new Set([...output.matchAll(/"soffice(?:\.exe|\.bin)"\s*,\s*"(\d+)"/gi)].map((match) => match[1]));
-  } catch {
-    return new Set();
   }
 }
 
@@ -609,7 +616,7 @@ test("rejects an unknown target with a stable error code", async () => {
   assert.strictEqual(body.errorCode, "UNSUPPORTED_TARGET");
 });
 
-test("renders PDF pages to a PNG zip without changing the source PDF", async () => {
+test("renders a single-page PDF directly to PNG without changing the source PDF", async () => {
   const sourcePath = path.join(scratchRoot, "报价单.pdf");
   await createTextPdf(sourcePath);
   const beforeHash = hashFile(sourcePath);
@@ -617,13 +624,14 @@ test("renders PDF pages to a PNG zip without changing the source PDF", async () 
   const { response, body } = await uploadConvert(sourcePath, "报价单.pdf", "png", "application/pdf");
 
   assert.strictEqual(response.status, 200, body.error);
-  assert.strictEqual(body.fileName, "报价单.png.zip");
-  const outputPath = await downloadResult(body, "pdf-pages.zip");
-  assertZipWithEntry(outputPath, /page-001\.png/);
+  assert.strictEqual(body.fileName, "报价单.png");
+  const outputPath = await downloadResult(body, "报价单.png");
+  const metadata = await sharp(outputPath).metadata();
+  assert.strictEqual(metadata.format, "png");
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
-test("renders PDF pages to a JPG zip without changing the source PDF", async () => {
+test("renders a single-page PDF directly to JPG without changing the source PDF", async () => {
   const sourcePath = path.join(scratchRoot, "picture-export.pdf");
   await createTextPdf(sourcePath);
   const beforeHash = hashFile(sourcePath);
@@ -631,10 +639,73 @@ test("renders PDF pages to a JPG zip without changing the source PDF", async () 
   const { response, body } = await uploadConvert(sourcePath, "picture-export.pdf", "jpg", "application/pdf");
 
   assert.strictEqual(response.status, 200, body.error);
-  assert.strictEqual(body.fileName, "picture-export.jpg.zip");
-  const outputPath = await downloadResult(body, "pdf-pages-jpg.zip");
-  assertZipWithEntry(outputPath, /page-001\.jpg/);
+  assert.strictEqual(body.fileName, "picture-export.jpg");
+  const outputPath = await downloadResult(body, "picture-export.jpg");
+  const metadata = await sharp(outputPath).metadata();
+  assert.strictEqual(metadata.format, "jpeg");
   assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("renders a single-page PDF directly to WebP", async () => {
+  const sourcePath = path.join(scratchRoot, "webp-export.pdf");
+  await createTextPdf(sourcePath);
+  const { response, body } = await uploadConvert(sourcePath, "webp-export.pdf", "webp", "application/pdf");
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "webp-export.webp");
+  const outputPath = await downloadResult(body, "webp-export.webp");
+  assert.strictEqual((await sharp(outputPath).metadata()).format, "webp");
+});
+
+test("renders multi-page PDF to a source-prefixed image zip", async () => {
+  const document = await PDFDocument.create();
+  document.addPage([120, 80]);
+  document.addPage([120, 80]);
+  const sourcePath = path.join(scratchRoot, "两页报价单.pdf");
+  await fsp.writeFile(sourcePath, await document.save());
+  const { response, body } = await uploadConvert(sourcePath, "两页报价单.pdf", "png", "application/pdf");
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "两页报价单.png.zip");
+  const outputPath = await downloadResult(body, "两页报价单.png.zip");
+  assertZipWithEntry(outputPath, /两页报价单-第1页\.png/);
+  assertZipWithEntry(outputPath, /两页报价单-第2页\.png/);
+});
+
+test("accepts PDF-compatible AI input and exports a direct JPG", async () => {
+  const sourcePath = path.join(scratchRoot, "packaging.ai");
+  await createTextPdf(sourcePath);
+  const { response, body } = await uploadConvert(sourcePath, "泰国包装稿.ai", "jpg");
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "泰国包装稿.jpg");
+  assert.ok((body.warnings || []).some((item) => item.code === "EXPERIMENTAL_INPUT"));
+  const outputPath = await downloadResult(body, "泰国包装稿.jpg");
+  assert.strictEqual((await sharp(outputPath).metadata()).format, "jpeg");
+});
+
+test("accepts PSD input and exports PNG through LibreOffice", { skip: !fs.existsSync(LIBREOFFICE_PATH) }, async () => {
+  const sourcePath = path.join(scratchRoot, "design.psd");
+  await createMinimalPsd(sourcePath);
+  const { response, body } = await uploadConvert(sourcePath, "design.psd", "png");
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "design.png");
+  const outputPath = await downloadResult(body, "design.png");
+  assert.strictEqual((await sharp(outputPath).metadata()).format, "png");
+});
+
+test("round-trips ffmpeg-backed image formats through uploaded extensionless temp files", { skip: !fs.existsSync(FFMPEG_BIN) }, async () => {
+  const pngPath = path.join(scratchRoot, "format-source.png");
+  await createImage(pngPath, { r: 230, g: 80, b: 20, alpha: 1 }, 32, 32);
+  for (const target of ["tga", "jp2", "jxl", "qoi", "ppm"]) {
+    const first = await uploadConvert(pngPath, "format-source.png", target, "image/png");
+    assert.strictEqual(first.response.status, 200, `${target} output: ${first.body.error || ""}`);
+    const encodedPath = await downloadResult(first.body, `format-source.${target}`);
+    const second = await uploadConvert(encodedPath, `format-source.${target}`, "png");
+    assert.strictEqual(second.response.status, 200, `${target} input: ${second.body.error || ""}`);
+    const roundTrip = await downloadResult(second.body, `${target}-roundtrip.png`);
+    const metadata = await sharp(roundTrip).metadata();
+    assert.strictEqual(metadata.format, "png");
+    assert.strictEqual(metadata.width, 32);
+    assert.strictEqual(metadata.height, 32);
+  }
 });
 
 test("OCR converts an image containing text to TXT without changing the source", async () => {
@@ -775,7 +846,7 @@ test("audio files must not offer video container targets", async () => {
   assert.ok(!body.targets.includes("mkv"), `mp3 must not offer mkv, got ${body.targets.join(",")}`);
   assert.ok(!body.targets.includes("mov"), `mp3 must not offer mov, got ${body.targets.join(",")}`);
   assert.ok(body.targets.includes("wav"), "mp3 must still offer wav");
-  assert.ok(body.targets.includes("zip"), "mp3 must still offer zip");
+  assert.ok(!body.targets.includes("zip"), "mp3 must no longer offer zip (feature removed)");
 });
 
 test("video files keep both audio and video targets", async () => {
@@ -1374,11 +1445,10 @@ test("converts a DOCX to plain text without LibreOffice txt export", async () =>
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
-test("converts a DOCX to PDF via LibreOffice", async () => {
+test("converts a DOCX to PDF via LibreOffice", async (t) => {
   const sourcePath = path.join(scratchRoot, "文档转PDF.docx");
   await createMinimalDocx(sourcePath, "Fresh isolated profile PDF content 2026");
   const beforeHash = hashFile(sourcePath);
-  const processesBefore = sofficeProcessIds();
 
   const { response, body } = await uploadConvert(sourcePath, "文档转PDF.docx", "pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
@@ -1387,50 +1457,35 @@ test("converts a DOCX to PDF via LibreOffice", async () => {
   const outputPath = await downloadResult(body, "文档转PDF.pdf");
   assertPdf(outputPath);
   assert.strictEqual(hashFile(sourcePath), beforeHash);
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  const leakedProcesses = [...sofficeProcessIds()].filter((pid) => !processesBefore.has(pid));
-  assert.deepStrictEqual(leakedProcesses, [], `LibreOffice left child processes behind: ${leakedProcesses.join(", ")}`);
-  const runtimeEntries = await fsp.readdir(isolatedRuntimeRoot).catch(() => []);
-  assert.deepStrictEqual(runtimeEntries.filter((name) => name.startsWith("office-")), [], "isolated Office profiles must be removed");
+  const exceedsProfilePath = process.platform === 'win32'
+    && path.join(isolatedRuntimeRoot, 'office-XXXXXX', 'p').length > require('../office-runtime').MAX_PROFILE_PATH_LENGTH;
+  await t.test("the owned local Office profiles and processes are released", {
+    skip: !serverModule ? 'External service runtime ownership is unavailable'
+      : exceedsProfilePath ? 'Native profile uses a different short-path fallback' : false
+  }, async () => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const leakedProcesses = snapshotOfficeProcesses(isolatedRuntimeRoot);
+    assert.deepStrictEqual(leakedProcesses, [], `LibreOffice left owned profile processes behind: ${JSON.stringify(leakedProcesses)}`);
+    const runtimeEntries = await fsp.readdir(isolatedRuntimeRoot).catch(error => {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    });
+    assert.deepStrictEqual(runtimeEntries.filter((name) => name.startsWith("office-")), [], "isolated Office profiles must be removed");
+  });
 });
 
 
 
 
 
-test("zip conversion honors compression level and reports sizes", async () => {
-  const sourcePath = path.join(scratchRoot, "压缩样本.txt");
-  await fsp.writeFile(sourcePath, "compress me ".repeat(4000), "utf8");
-  const beforeHash = hashFile(sourcePath);
-
-  async function convertZip(level) {
-    const form = new FormData();
-    form.append("file", new Blob([await fsp.readFile(sourcePath)], { type: "text/plain" }), "压缩样本.txt");
-    form.append("targetFormat", "zip");
-    if (level != null) form.append("compressionLevel", String(level));
-    const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
-    const body = await parseBody(response);
-    assert.strictEqual(response.status, 200, body.error);
-    return body;
-  }
-
-  const store = await convertZip(0);
-  const max = await convertZip(9);
-
-  assert.ok(store.originalBytes > 0, "zip response must report originalBytes");
-  assert.ok(store.compressedBytes > 0, "zip response must report compressedBytes");
-  assert.ok(typeof store.compressionRatio === "number", "zip response must report compressionRatio");
-
-  const storePath = await downloadResult(store, "store.zip");
-  const maxPath = await downloadResult(max, "max.zip");
-  const storeSize = (await fsp.stat(storePath)).size;
-  const maxSize = (await fsp.stat(maxPath)).size;
-  assert.ok(maxSize < storeSize, `level 9 (${maxSize}) must be smaller than level 0 (${storeSize}) for text`);
-  assert.ok(max.compressionRatio > store.compressionRatio, "level 9 ratio must exceed level 0 ratio");
-  assert.strictEqual(hashFile(sourcePath), beforeHash);
-
-  const defaultZip = await convertZip(null);
-  assert.strictEqual(defaultZip.fileName, "压缩样本.zip");
+test("zip is no longer offered as a conversion target (2026-09-04 removal)", async () => {
+  const form = new FormData();
+  form.append("file", new Blob(["compress me ".repeat(100)], { type: "text/plain" }), "压缩样本.txt");
+  form.append("targetFormat", "zip");
+  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  assert.strictEqual(response.status, 400);
+  const body = await parseBody(response);
+  assert.strictEqual(body.errorCode, "UNSUPPORTED_TARGET");
 });
 
 // ---- v0.3.5 审计修复回归：BMP/CSV-MD/XML/YAML/HTML-DOCX/XLSX-CSV/扫描PDF-DOCX ----

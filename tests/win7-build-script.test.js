@@ -107,6 +107,11 @@ test("prepare-only creates a clean, current Win7 staging tree without changing t
   const rootWin7Lock = JSON.parse(beforeWin7Lock.toString("utf8"));
   const stagedPackage = JSON.parse(fs.readFileSync(path.join(stagePath, "package.json"), "utf8"));
   const stagedLock = JSON.parse(fs.readFileSync(path.join(stagePath, "package-lock.json"), "utf8"));
+  const distributionExclusions = rootPackage.build.files.filter((entry) => entry.startsWith("!"));
+  assert.ok(distributionExclusions.some((entry) => entry.includes(".map")));
+  assert.ok(distributionExclusions.some((entry) => entry.includes("traineddata.gz")));
+  assert.deepEqual(stagedPackage.build.files.filter((entry) => entry.startsWith("!")), distributionExclusions);
+  assert.ok(!fs.readdirSync(stagePath).some((entry) => entry.startsWith("!")), "exclusion glob was copied as a source directory");
   assert.equal(rootPackage.name, "flyingmouse-format");
   assert.notEqual(stagedPackage.name, rootPackage.name);
   assert.equal(stagedPackage.dependencies.sharp, "0.32.6");

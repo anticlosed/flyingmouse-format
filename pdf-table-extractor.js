@@ -342,9 +342,16 @@ function editDistance(left, right) {
 }
 
 function numericText(value) {
-  const text = String(value || "").replace(/[^0-9.]/g, "");
-  if (!text || (text.match(/\./g) || []).length > 1) return "";
-  return text;
+  const text = String(value || "").replace(/\s+/g, "");
+  // Arithmetic repair only understands unsigned decimal tokens. Do not erase
+  // signs, grouping separators or units and reinterpret a different number.
+  return /^\d+(?:\.\d+)?$/.test(text) ? text : "";
+}
+
+function repairQuantityText(value) {
+  const text = numericText(value);
+  // Fractional quantities are valid source data, not dropped decimal points.
+  return /^\d+$/.test(text) ? text : "";
 }
 
 function formatDecimal(value) {
@@ -353,7 +360,7 @@ function formatDecimal(value) {
 
 function arithmeticPair(row, priceIndex, quantityIndex, totalIndex) {
   const rawPrice = numericText(row[priceIndex]);
-  const rawQuantity = numericText(row[quantityIndex]).replaceAll(".", "");
+  const rawQuantity = repairQuantityText(row[quantityIndex]);
   const rawTotal = numericText(row[totalIndex]);
   const total = Number(rawTotal);
   if (!rawPrice || !rawQuantity || !Number.isFinite(total) || total <= 0) return null;
@@ -399,7 +406,7 @@ function greatestCommonDivisor(left, right) {
 function repairDominantArithmeticOutliers(table, priceIndex, quantityIndex, totalIndex) {
   const dataRows = table.rows.slice(1).filter((row) => {
     const price = Number(numericText(row[priceIndex]));
-    const quantity = Number(numericText(row[quantityIndex]).replaceAll(".", ""));
+    const quantity = Number(repairQuantityText(row[quantityIndex]));
     const total = Number(numericText(row[totalIndex]));
     return price > 0 && Number.isInteger(quantity) && quantity > 0 && total > 0;
   });
@@ -427,7 +434,7 @@ function repairDominantArithmeticOutliers(table, priceIndex, quantityIndex, tota
   const dominantPrice = Number(dominantPriceText);
   const trustedQuantities = dataRows
     .filter((row) => canonicalPrice(row) === dominantPriceText)
-    .map((row) => Number(numericText(row[quantityIndex]).replaceAll(".", "")))
+    .map((row) => Number(repairQuantityText(row[quantityIndex])))
     .filter((value) => Number.isInteger(value) && value > 0);
   const quantityStep = trustedQuantities.reduce((step, value) => step ? greatestCommonDivisor(step, value) : value, 0);
   if (quantityStep < 2) return 0;
@@ -439,7 +446,7 @@ function repairDominantArithmeticOutliers(table, priceIndex, quantityIndex, tota
   table.rows.slice(1).forEach((row, offset) => {
     const rowIndex = offset + 1;
     const rawPrice = numericText(row[priceIndex]);
-    const rawQuantity = numericText(row[quantityIndex]).replaceAll(".", "");
+    const rawQuantity = repairQuantityText(row[quantityIndex]);
     const rawTotal = numericText(row[totalIndex]);
     if (!rawPrice || !rawQuantity || !rawTotal || formatDecimal(Number(rawPrice)) === dominantPriceText) return;
     const priceDistance = editDistance(dominantPriceText, rawPrice);
@@ -462,6 +469,8 @@ function repairDominantArithmeticOutliers(table, priceIndex, quantityIndex, tota
     const hasLowConfidenceCell = confidence.length === 3 && Math.min(...confidence) < LOW_CONFIDENCE;
     if (!hasLowConfidenceCell) return;
     for (const [column, value] of [[priceIndex, dominantPriceText], [quantityIndex, best.quantityText], [totalIndex, best.totalText]]) {
+      const cellConfidence = Number(table.cellConfidence?.[rowIndex]?.[column]);
+      if (!Number.isFinite(cellConfidence) || cellConfidence >= LOW_CONFIDENCE) continue;
       if (String(row[column] || "").trim() === value) continue;
       row[column] = value;
       if (table.cellConfidence[rowIndex]) table.cellConfidence[rowIndex][column] = Math.min(table.cellConfidence[rowIndex][column] || 1, 0.7);
@@ -475,7 +484,7 @@ function repairExactDecimalPrices(table, priceIndex, quantityIndex, totalIndex) 
   let corrected = 0;
   table.rows.slice(1).forEach((row, offset) => {
     const rawPrice = numericText(row[priceIndex]);
-    const rawQuantity = numericText(row[quantityIndex]).replaceAll(".", "");
+    const rawQuantity = repairQuantityText(row[quantityIndex]);
     const rawTotal = numericText(row[totalIndex]);
     if (!/^\d{2,4}$/.test(rawPrice) || !/^\d+$/.test(rawQuantity) || !rawTotal) return;
     const quantity = Number(rawQuantity);
@@ -489,6 +498,10 @@ function repairExactDecimalPrices(table, priceIndex, quantityIndex, totalIndex) 
       .filter((price) => Math.abs(price * quantity - total) <= 0.01);
     if (candidates.length !== 1) return;
     const rowIndex = offset + 1;
+    // Even exact multiplication cannot prove a high-confidence price is wrong
+    // (discounts, pack sizes and source errors are legitimate possibilities).
+    const priceConfidence = Number(table.cellConfidence?.[rowIndex]?.[priceIndex]);
+    if (!Number.isFinite(priceConfidence) || priceConfidence >= LOW_CONFIDENCE) return;
     row[priceIndex] = formatDecimal(candidates[0]);
     if (table.cellConfidence[rowIndex]) table.cellConfidence[rowIndex][priceIndex] = Math.min(table.cellConfidence[rowIndex][priceIndex] || 1, 0.7);
     corrected += 1;
@@ -517,6 +530,8 @@ function repairArithmeticColumns(table) {
       .filter(Number.isFinite);
     if (confidence.length === 3 && Math.min(...confidence) >= LOW_CONFIDENCE) return;
     for (const [column, value] of [[priceIndex, pair.priceText], [quantityIndex, pair.quantityText], [totalIndex, pair.totalText]]) {
+      const cellConfidence = Number(table.cellConfidence?.[rowIndex]?.[column]);
+      if (!Number.isFinite(cellConfidence) || cellConfidence >= LOW_CONFIDENCE) continue;
       if (String(table.rows[rowIndex][column] || "").trim() === value) continue;
       table.rows[rowIndex][column] = value;
       if (table.cellConfidence[rowIndex]) table.cellConfidence[rowIndex][column] = Math.min(table.cellConfidence[rowIndex][column] || 1, 0.7);

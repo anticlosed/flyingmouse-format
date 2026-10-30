@@ -258,7 +258,7 @@ async function buildPdfTableWorkbook(pages, dependencies) {
   for await (const page of pages) {
     let words = pdfTextContentToWords({ textContent: page.textContent, viewport: page.viewport });
     let source = "pdf-text";
-    if (!hasEffectiveText(words)) {
+    if (!hasEffectiveText(words) && !page.blank) {
       if (!ocrPage) {
         const error = new Error("PDF table extraction requires OCR for this scanned page.");
         error.code = "PDF_TABLE_OCR_REQUIRED";

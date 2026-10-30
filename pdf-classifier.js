@@ -12,6 +12,7 @@ function boundedNumber(value, minimum = 0, maximum = Number.MAX_SAFE_INTEGER) {
 }
 
 function classifyPageMetrics(metrics = {}) {
+  if (metrics.blank === true) return "native";
   const characterCount = boundedNumber(metrics.characterCount);
   const printableRatio = boundedNumber(metrics.printableRatio, 0, 1);
   const imageCoverage = boundedNumber(metrics.imageCoverage, 0, 1);
@@ -33,7 +34,8 @@ function classifyDocument(pages = []) {
         : index + 1,
       characterCount: boundedNumber(page.characterCount),
       printableRatio: boundedNumber(page.printableRatio, 0, 1),
-      imageCoverage: boundedNumber(page.imageCoverage, 0, 1)
+      imageCoverage: boundedNumber(page.imageCoverage, 0, 1),
+      ...(page.blank === true ? { blank: true } : {})
     };
     return { ...metrics, kind: classifyPageMetrics(metrics) };
   });
@@ -348,6 +350,7 @@ async function classifyPdf(inputPath) {
       pages.push({
         pageNumber,
         ...metrics,
+        ...(!metrics.characterCount && operatorList.fnArray.length === 0 ? { blank: true } : {}),
         imageCoverage: imageCoverageFromOperators(operatorList, pdfjs.OPS, viewport)
       });
     }
