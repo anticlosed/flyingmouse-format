@@ -369,11 +369,22 @@ test("merges images with blank pages inserted at requested positions", async () 
 test("merges a large batch of images into one PDF without hitting memory limits", async () => {
   // 回归：convertImagesToPdf 流式化之前，约 53 张手机截图合并即报
   // RangeError: Failed to allocate memory（转换全部驻留内存 + O(n^2) 拼接）。
-  // 此用例用 60 张图走完整路径，锁定「不因图片数量失败」且页数正确。
+  // 此用例用 60 张图走完整路径，锁定「不因图片数量失败」且页数正确；
+  // 单张尺寸按服务端当前设备预算收缩，避免可用内存偏低的环境把准入检查误判成回归。
+  const batchSize = 60;
+  const capabilitiesResponse = await fetch(`${baseUrl}/api/capabilities`);
+  assert.strictEqual(capabilitiesResponse.status, 200, "capabilities must be readable");
+  const capabilities = await capabilitiesResponse.json();
+  const maxImagePdfPixels = capabilities?.limits?.maxImagePdfPixels;
+  assert.ok(Number.isSafeInteger(maxImagePdfPixels) && maxImagePdfPixels > 0, "capabilities must report a finite image merge budget");
+  const perImagePixels = Math.floor(maxImagePdfPixels * 0.8 / batchSize);
+  const width = Math.max(32, Math.min(400, Math.floor(Math.sqrt(perImagePixels * 2 / 3))));
+  const height = Math.max(32, Math.round(width * 3 / 2));
+  assert.ok(width * height * batchSize <= maxImagePdfPixels, "test batch must fit the reported image merge budget");
   const batch = [];
-  for (let i = 0; i < 60; i += 1) {
+  for (let i = 0; i < batchSize; i += 1) {
     const p = path.join(scratchRoot, `批量-${String(i).padStart(3, "0")}.png`);
-    await createImage(p, { r: (i * 7) % 256, g: (i * 13) % 256, b: (i * 29) % 256, alpha: 1 }, 400, 600);
+    await createImage(p, { r: (i * 7) % 256, g: (i * 13) % 256, b: (i * 29) % 256, alpha: 1 }, width, height);
     batch.push({ path: p, name: `批量-${String(i).padStart(3, "0")}.png` });
   }
 
